@@ -86,6 +86,8 @@ class DojoAppConfig(AppConfig):
         import dojo.tags_signals
         import dojo.test.signals
         import dojo.tool_product.signals  # noqa: F401
+        # Import deduplication tracker to register signals
+        import dojo.deduplication_tracker  # noqa: F401
 
 
 def get_model_fields_with_extra(model, extra_fields=()):

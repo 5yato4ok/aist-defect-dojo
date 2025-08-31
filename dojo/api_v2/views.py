@@ -2649,7 +2649,9 @@ class ReImportScanView(mixins.CreateModelMixin, viewsets.GenericViewSet):
             if jira_project := (jira_helper.get_jira_project(jira_driver) if jira_driver else None):
                 push_to_jira = push_to_jira or jira_project.push_all_issues
         logger.debug(f"push_to_jira: {push_to_jira}")
-        serializer.save(push_to_jira=push_to_jira)
+        obj = serializer.save(push_to_jira=push_to_jira)
+
+        obj.findings_affected.count()
 
 
 # Authorization: configuration
