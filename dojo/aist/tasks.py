@@ -177,8 +177,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         with transaction.atomic():
             pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
-            if tests:
-                pipeline.tests.set(tests)  # Many-to-Many
+            pipeline.tests.set(tests, clear=True)
             pipeline.status = AISTStatus.WAITING_DEDUPLICATION_FINISHED
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
