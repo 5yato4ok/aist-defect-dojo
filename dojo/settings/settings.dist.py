@@ -900,6 +900,7 @@ INSTALLED_APPS = (
     "tagulous",
     "fontawesomefree",
     "django_filters",
+    "dojo.aist"
 )
 
 # ------------------------------------------------------------------------------

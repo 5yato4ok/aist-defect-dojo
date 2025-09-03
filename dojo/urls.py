@@ -4,7 +4,7 @@ from django.conf import settings
 from django.conf.urls import include
 from django.contrib import admin
 from django.http import HttpResponse
-from django.urls import re_path
+from django.urls import re_path, include, path
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.authtoken import views as tokenviews
 from rest_framework.routers import DefaultRouter
@@ -287,3 +287,7 @@ if hasattr(settings, "DJANGO_DEBUG_TOOLBAR_ENABLED"):
     if settings.DJANGO_DEBUG_TOOLBAR_ENABLED:
         from debug_toolbar.toolbar import debug_toolbar_urls
         urlpatterns += debug_toolbar_urls()
+
+urlpatterns += [
+    path('aist/', include(('dojo.aist.urls', 'dojo.aist'), namespace='dojo_aist')),
+]

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-3">
+  <h3>AIST Pipeline: {{ pipeline.id }}</h3>
+  <p><strong>Status:</strong> {{ pipeline.status }}</p>
+  <div class="card">
+    <div class="card-header">Logs</div>
+    <div class="card-body" style="max-height: 420px; overflow:auto; font-family: monospace; white-space: pre-wrap;">
+      {{ pipeline.logs|default:"No logs yet." }}
+    </div>
+  </div>
+  {% if pipeline.tests %}
+  <div class="card mt-3">
+    <div class="card-header">Imported Tests</div>
+    <div class="card-body">
+      {{ pipeline.tests }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
