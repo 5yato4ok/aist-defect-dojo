@@ -47,7 +47,7 @@ def start_pipeline(request: HttpRequest) -> HttpResponse:
                 p = AISTPipeline.objects.create(
                     id=pipeline_id,
                     project=form.cleaned_data["project"],
-                    status=AISTStatus.SAST_LAUNCHED,
+                    status=AISTStatus.FINISHED,
                 )
             # Launch the Celery task and record its id on the pipeline.
             # Storing the task id allows us to revoke it later if the
@@ -128,4 +128,5 @@ def stream_logs_sse(request, id: str):
 
     resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream; charset=utf-8")
     resp["Cache-Control"] = "no-cache, no-transform"
+    resp["X-Accel-Buffering"] = "no"
     return resp

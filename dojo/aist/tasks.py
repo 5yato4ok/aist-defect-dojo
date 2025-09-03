@@ -43,6 +43,26 @@ from django.apps import apps
 from .models import AISTPipeline, AISTStatus
 from .utils import DatabaseLogHandler
 
+def _install_db_logging(pipeline_id: str, level=logging.INFO):
+    """Connect BD -handler for all required loggers ко всем нужным логгерам (root и 'pipeline')."""
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    dbh = DatabaseLogHandler(pipeline_id)
+    dbh.setLevel(level)
+    dbh.setFormatter(fmt)
+
+    plog = logging.getLogger("pipeline")
+    plog.setLevel(level)
+    plog.propagate = True
+    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
+               for h in plog.handlers):
+        plog.addHandler(dbh)
+
+    root = logging.getLogger("dojo.aist.pipeline.{pipeline_id}")
+    root.setLevel(min(root.level or level, level))
+    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
+               for h in root.handlers):
+        root.addHandler(dbh)
+    return root
 
 @shared_task(bind=True)
 def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
@@ -57,12 +77,16 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
     :param pipeline_id: Primary key of the :class:`AISTPipeline` instance.
     :param params: Dictionary of parameters collected from the form.
     """
-    logger = logging.getLogger(f"dojo.sast.pipeline.{pipeline_id}")
-    logger.setLevel(logging.INFO)
-    handler = DatabaseLogHandler(pipeline_id)
-    logger.addHandler(handler)
+
+    def get_param(key: str, default: Any) -> Any:
+        value = params.get(key)
+        return value if value not in (None, "", []) else default
+
+    log_level = get_param("log_level", "INFO")
+    logger = _install_db_logging(pipeline_id, log_level)
 
     pipeline = None
+
     try:
         with transaction.atomic():
             pipeline = (
@@ -108,10 +132,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         analyzers_cfg_path = os.path.join(pipeline_path, "pipeline", "config", "analyzers.yaml")
         analyzers_helper = AnalyzersConfigHelper(analyzers_cfg_path)
 
-        def get_param(key: str, default: Any) -> Any:
-            value = params.get(key)
-            return value if value not in (None, "", []) else default
-
         script_path = get_param("script_path", None)
         output_dir = get_param("output_dir", os.path.join("/tmp", "aist_output", project_name or "project"))
         languages = get_param("languages", supported_languages)
@@ -121,11 +141,9 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         rebuild_images = bool(get_param("rebuild_images", False))
         analyzers = get_param("analyzers", [])
         time_class_level = get_param("time_class_level", "")
-        log_level = get_param("log_level", "INFO")
         dojo_product_name = get_param("dojo_product_name", project_name or None)
 
-        dockerfile_path = os.path.join(pipeline_path, "pipeline", "project-builder", "Dockerfile")
-        context_dir = os.path.join(pipeline_path, "pipeline")
+        dockerfile_path = os.path.join(pipeline_path, "Dockerfiles", "builder", "Dockerfile")
         project_path = get_param("project_path", project_path_default)
 
         logger.info("Starting configure_project_run_analyses")
@@ -135,7 +153,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             languages=languages,
             analyzer_config=analyzers_helper,
             dockerfile_path=dockerfile_path,
-            context_dir=context_dir,
+            context_dir=pipeline_path,
             image_name=f"project-{dojo_product_name}-builder" if dojo_product_name else "project-builder",
             project_path=project_path,
             force_rebuild=False,

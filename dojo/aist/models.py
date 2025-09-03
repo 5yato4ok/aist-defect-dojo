@@ -33,7 +33,7 @@ class AISTPipeline(models.Model):
     id = models.CharField(primary_key=True, max_length=64)
 
     project = models.ForeignKey(AISTProject, on_delete=models.CASCADE, related_name="aist_pipelines")
-    status = models.CharField(max_length=64, choices=AISTStatus.choices, default=AISTStatus.SAST_LAUNCHED)
+    status = models.CharField(max_length=64, choices=AISTStatus.choices, default=AISTStatus.FINISHED)
 
     tests = models.ManyToManyField(Test, related_name="aist_pipelines", blank=True)
     launch_data = models.JSONField(default=dict, blank=True)

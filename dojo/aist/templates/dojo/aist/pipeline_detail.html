@@ -28,7 +28,7 @@
 
   src.onmessage = (evt) => {
     if (evt && evt.data) {
-      box.textContent += evt.data;
+      box.textContent += "\n" + evt.data;
       if (autoscroll) box.scrollTop = box.scrollHeight;
     }
   };
