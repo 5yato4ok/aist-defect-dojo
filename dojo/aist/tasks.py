@@ -58,7 +58,7 @@ def _install_db_logging(pipeline_id: str, level=logging.INFO):
         plog.addHandler(dbh)
 
     root = logging.getLogger("dojo.aist.pipeline.{pipeline_id}")
-    root.setLevel(min(root.level or level, level))
+    root.setLevel(level)
     if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
                for h in root.handlers):
         root.addHandler(dbh)
@@ -97,7 +97,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             )
 
             # protection from secondary launch
-            if pipeline.status in {AISTStatus.SAST_LAUNCHED, AISTStatus.UPLOADING_RESULTS, AISTStatus.WAITING_DEDUPLICATION_FINISHED, AISTStatus.WAITING_RESULT_FROM_AI}:
+            if pipeline.status in {AISTStatus.SAST_LAUNCHED, AISTStatus.UPLOADING_RESULTS, AISTStatus.WAITING_DEDUPLICATION_TO_FINISH, AISTStatus.WAITING_RESULT_FROM_AI}:
                 logger.info("Pipeline already in progress; skipping duplicate start.")
                 return
 
@@ -144,7 +144,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         dojo_product_name = get_param("dojo_product_name", project_name or None)
 
         dockerfile_path = os.path.join(pipeline_path, "Dockerfiles", "builder", "Dockerfile")
-        project_path = get_param("project_path", project_path_default)
+        project_path = "/tmp/aist-projects" #get_param("project_path", project_path_default)
 
         logger.info("Starting configure_project_run_analyses")
         launch_data = configure_project_run_analyses(
@@ -196,7 +196,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         with transaction.atomic():
             pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
             pipeline.tests.set(tests, clear=True)
-            pipeline.status = AISTStatus.WAITING_DEDUPLICATION_FINISHED
+            pipeline.status = AISTStatus.WAITING_DEDUPLICATION_TO_FINISH
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
 
@@ -215,8 +215,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             except Exception:
                 logger.exception("Failed to mark pipeline as FINISHED after exception.")
         raise
-    finally:
-        logger.removeHandler(handler)
 
 
 @shared_task(bind=True)

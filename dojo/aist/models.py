@@ -6,7 +6,8 @@ from dojo.models import Test
 class AISTStatus(models.TextChoices):
     SAST_LAUNCHED = "SAST_LAUNCHED", "Launched"
     UPLOADING_RESULTS = "UPLOADING_RESULTS", "Uploading Results"
-    WAITING_DEDUPLICATION_FINISHED = "WAITING_DEDUPLICATION_FINISHED", "Waiting Deduplication Finished"
+
+    WAITING_DEDUPLICATION_TO_FINISH = "WAITING_DEDUPLICATION_TO_FINISH", "Waiting Deduplication To Finish"
     WAITING_RESULT_FROM_AI = "WAITING_RESULT_FROM_AI", "Waiting Result From AI"
     FINISHED = "FINISHED", "Finished"
 
