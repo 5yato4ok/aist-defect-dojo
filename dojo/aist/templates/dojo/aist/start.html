@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% load i18n %}
 {% block content %}
-<div class="container mt-3">
+<div class="container mt-3 pb-5">
   <h3 class="mb-3">Run SAST Pipeline</h3>
-  <div class="card shadow-sm">
+  <div class="card shadow-sm mb-5">
     <div class="card-body pb-4">
       <form method="post">
         {% csrf_token %}
@@ -27,15 +27,15 @@
           </div>
         </div>
 
-        {# Rebuild images (checkbox) — aligned like other checkboxes, single label next to box #}
-          <div class="mb-3 row">
-              <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
-              <div class="col-sm-9">
-                  <div class="form-check">
-                      {{ form.rebuild_images }}
-                  </div>
-              </div>
+        {# Rebuild images (checkbox) — aligned like other fields #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
+          <div class="col-sm-9">
+            <div class="form-check">
+              {{ form.rebuild_images }}
+            </div>
           </div>
+        </div>
 
         {# Log level #}
         <div class="mb-3 row">
@@ -90,13 +90,17 @@
           </div>
         </div>
 
-          <div class="text-end mt-2">
-              <button type="submit" class="btn btn-primary">Start</button>
-          </div>
+        <div class="text-end mt-3">
+          <button type="submit" class="btn btn-primary">Start</button>
+        </div>
       </form>
     </div>
   </div>
+
+  {# hard spacer to guarantee bottom gap across themes #}
+  <div class="mb-5"></div>
 </div>
+    <div style="height:48px"></div>
 
 {# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
 <script>
