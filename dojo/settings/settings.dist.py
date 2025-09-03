@@ -1991,3 +1991,8 @@ if DJANGO_DEBUG_TOOLBAR_ENABLED:
         "debug_toolbar.panels.profiling.ProfilingPanel",
         # 'cachalot.panels.CachalotPanel',
     ]
+
+AIST_PIPELINE_CODE_PATH = env(
+    "AIST_PIPELINE_CODE_PATH",
+    default=str(Path(__file__).resolve().parent.parent.parent / "sast-combinator" / "tools" / "sast-pipeline")
+)

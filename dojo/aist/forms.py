@@ -5,12 +5,12 @@ from .models import AISTProject
 
 def _load_analyzers_config():
     import importlib, sys, os
-    code_path = getattr(settings, "SAST_PIPELINE_CODE_PATH", None)
+    code_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
     if code_path and os.path.isdir(code_path):
         if code_path not in sys.path:
             sys.path.insert(0, code_path)
         try:
-            return importlib.import_module("pipeline.config_utils").ANALYZERS_CONFIG
+            return importlib.import_module("pipeline.config_utils").AnalyzersConfigHelper()
         except Exception:
             return None
     return None

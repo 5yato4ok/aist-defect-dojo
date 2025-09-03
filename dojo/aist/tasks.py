@@ -71,9 +71,9 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         # to sys.path so that Python can resolve imports.  We avoid
         # importing these modules at the top level to allow running
         # without the code present (e.g. during unit testing).
-        pipeline_path = getattr(settings, 'SAST_PIPELINE_CODE_PATH', None)
+        pipeline_path = getattr(settings, 'AIST_PIPELINE_CODE_PATH', None)
         if not pipeline_path or not os.path.isdir(pipeline_path):
-            raise RuntimeError('SAST pipeline code path is not configured or does not exist. Please set SAST_PIPELINE_CODE_PATH.')
+            raise RuntimeError('SAST pipeline code path is not configured or does not exist. Please set AIST_PIPELINE_CODE_PATH.')
         if pipeline_path not in sys.path:
             sys.path.append(pipeline_path)
         # Import after modifying sys.path

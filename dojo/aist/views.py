@@ -13,7 +13,7 @@ def start_pipeline(request):
     # If there is a non-finished pipeline, redirect to its status
     active = AISTPipeline.objects.exclude(status=AISTStatus.FINISHED).first()
     if active:
-        return redirect('dojo_aist:pipeline_detail', pk=active.pk)
+        return redirect('dojo_aist:pipeline_detail', id=active.id)
 
     if request.method == "POST":
         form = AISTPipelineRunForm(request.POST)
