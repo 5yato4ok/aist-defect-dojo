@@ -1,21 +1,46 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% block content %}
-<div class="container mt-3">
-  <h3>AIST Pipeline: {{ pipeline.id }}</h3>
-  <p><strong>Status:</strong> {{ pipeline.status }}</p>
-  <div class="card">
-    <div class="card-header">Logs</div>
-    <div class="card-body" style="max-height: 420px; overflow:auto; font-family: monospace; white-space: pre-wrap;">
-      {{ pipeline.logs|default:"No logs yet." }}
-    </div>
-  </div>
-  {% if pipeline.tests %}
-  <div class="card mt-3">
-    <div class="card-header">Imported Tests</div>
-    <div class="card-body">
-      {{ pipeline.tests }}
-    </div>
-  </div>
-  {% endif %}
-</div>
+<h2 class="mb-2">AIST Pipeline: {{ pipeline.id }}</h2>
+<p class="mb-2"><strong>Status:</strong> <span id="pl-status">{{ pipeline.status }}</span></p>
+
+<form method="post" action="{% url 'dojo_aist:pipeline_stop' pipeline.id %}" style="display:inline;">
+  {% csrf_token %}
+  <button class="btn btn-warning btn-sm">Stop</button>
+</form>
+&nbsp;
+<a class="btn btn-outline-danger btn-sm" href="{% url 'dojo_aist:pipeline_delete' pipeline.id %}">Delete…</a>
+
+<hr/>
+
+<h4>Logs</h4>
+<pre id="logbox" style="max-height: 50vh; overflow: auto; background:#101317; color:#ddd; padding:12px; border-radius:6px;">{{ pipeline.logs|default:"No logs yet." }}</pre>
+
+<script>
+(function() {
+  const src = new EventSource("{% url 'dojo_aist:pipeline_logs_stream' pipeline.id %}");
+  const box = document.getElementById("logbox");
+  const st  = document.getElementById("pl-status");
+  let autoscroll = true;
+
+  box.addEventListener('scroll', () => {
+    autoscroll = (box.scrollTop + box.clientHeight + 5) >= box.scrollHeight;
+  });
+
+  src.onmessage = (evt) => {
+    if (evt && evt.data) {
+      box.textContent += evt.data;
+      if (autoscroll) box.scrollTop = box.scrollHeight;
+    }
+  };
+
+  src.addEventListener("done", (evt) => {
+    st.textContent = "FINISHED";
+    src.close();
+  });
+
+  src.onerror = () => {
+    // keep it silent; browser will try to reconnect
+  };
+})();
+</script>
 {% endblock %}
