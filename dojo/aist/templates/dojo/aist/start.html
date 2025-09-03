@@ -4,13 +4,152 @@
 <div class="container mt-3">
   <h3 class="mb-3">Run SAST Pipeline</h3>
   <div class="card shadow-sm">
-    <div class="card-body">
+    <div class="card-body pb-4">
       <form method="post">
         {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="btn btn-primary">Start</button>
+
+        {# Project select #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.project.label }}</label>
+          <div class="col-sm-9">
+            {{ form.project }}
+            {% if form.project.help_text %}
+              <small class="form-text text-muted small">{{ form.project.help_text }}</small>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Project version (from project) — hidden if version is empty #}
+        <div class="mb-3 row" id="projVersionRow" style="display:none;">
+          <label class="col-sm-3 col-form-label">Project version (from project)</label>
+          <div class="col-sm-9">
+            <input type="text" class="form-control" id="projVersion" readonly>
+          </div>
+        </div>
+
+        {# Rebuild images (checkbox) — aligned like other checkboxes, single label next to box #}
+          <div class="mb-3 row">
+              <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
+              <div class="col-sm-9">
+                  <div class="form-check">
+                      {{ form.rebuild_images }}
+                  </div>
+              </div>
+          </div>
+
+        {# Log level #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.log_level.label }}</label>
+          <div class="col-sm-9">
+            {{ form.log_level }}
+          </div>
+        </div>
+
+        {# Languages as checkboxes #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.languages.label }}</label>
+          <div class="col-sm-9" id="languages-group">
+            <div class="row">
+              {% for checkbox in form.languages %}
+                <div class="col-sm-6 col-lg-4">
+                  <div class="form-check mb-2">
+                    {{ checkbox.tag }}
+                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <small class="form-text text-muted small mt-1">
+              Project-required languages are preselected and disabled.
+            </small>
+          </div>
+        </div>
+
+        {# Analyzers as checkboxes #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.analyzers.label }}</label>
+          <div class="col-sm-9">
+            <div class="row">
+              {% for checkbox in form.analyzers %}
+                <div class="col-sm-6 col-lg-4">
+                  <div class="form-check mb-2">
+                    {{ checkbox.tag }}
+                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# Time class #}
+        <div class="mb-3 row">
+          <label class="col-sm-3 col-form-label">{{ form.time_class_level.label }}</label>
+          <div class="col-sm-9">
+            {{ form.time_class_level }}
+          </div>
+        </div>
+
+          <div class="text-end mt-2">
+              <button type="submit" class="btn btn-primary">Start</button>
+          </div>
       </form>
     </div>
   </div>
 </div>
+
+{# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
+<script>
+(function () {
+  const PROJECTS = {
+    {% for p in form.fields.project.queryset %}
+      "{{ p.id }}": {
+        supported_languages: {{ p.supported_languages|safe }},
+        version: {{ p.project_version|default:"null"|safe }}
+      }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  };
+
+  const select    = document.querySelector('select[name="{{ form.project.html_name }}"]');
+  const langsWrap = document.getElementById('languages-group');
+  const verRow    = document.getElementById('projVersionRow');
+  const verInput  = document.getElementById('projVersion');
+
+  function updateVersionRow() {
+    const id   = select?.value;
+    const data = PROJECTS[id];
+    if (!data) { if (verRow) verRow.style.display = "none"; return; }
+    const hasVersion = (data.version !== null && data.version !== undefined && String(data.version).trim() !== "");
+    if (verInput) verInput.value = hasVersion ? String(data.version) : "";
+    if (verRow) verRow.style.display = hasVersion ? "" : "none";
+  }
+
+  function updateLanguageCheckboxes() {
+    if (!langsWrap || !select) return;
+    const data  = PROJECTS[select.value] || { supported_languages: [] };
+    const fixed = new Set(Array.isArray(data.supported_languages) ? data.supported_languages : []);
+    const boxes = langsWrap.querySelectorAll('input[type="checkbox"][name="{{ form.languages.html_name }}"]');
+    boxes.forEach(cb => {
+      const isFixed = fixed.has(cb.value);
+      if (isFixed) {
+        cb.checked  = true;
+        cb.disabled = true;
+        cb.classList.add('form-check-input');
+        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.add('text-muted');
+      } else {
+        cb.disabled = false;
+        cb.classList.add('form-check-input');
+        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.remove('text-muted');
+      }
+    });
+  }
+
+  updateVersionRow();
+  updateLanguageCheckboxes();
+  select?.addEventListener('change', () => {
+    updateVersionRow();
+    updateLanguageCheckboxes();
+  });
+})();
+</script>
 {% endblock %}

@@ -42,6 +42,8 @@ from django.apps import apps
 
 from .models import AISTPipeline, AISTStatus
 from .utils import DatabaseLogHandler
+from ..jira_link.helper import process_jira_project_form
+
 
 def _install_db_logging(pipeline_id: str, level=logging.INFO):
     """Connect BD -handler for all required loggers ко всем нужным логгерам (root и 'pipeline')."""
@@ -109,8 +111,8 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             project = pipeline.project
             project_name = project.project_name if project else None
             project_version = project.project_version if project else None
-            project_path_default = project.project_path if project else None
-            supported_languages = project.supported_languages if project else []
+            project_path_default = project.project_path if project else None #TODO: remove
+            project_supported_languages = project.supported_languages if project else []
 
 
         pipeline_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
@@ -134,9 +136,10 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         script_path = get_param("script_path", None)
         output_dir = get_param("output_dir", os.path.join("/tmp", "aist_output", project_name or "project"))
-        languages = get_param("languages", supported_languages)
+        languages = get_param("languages", [])
         if isinstance(languages, str):
             languages = [languages]
+        languages = list(set(languages + project_supported_languages))
         project_version = get_param("project_version", project_version)
         rebuild_images = bool(get_param("rebuild_images", False))
         analyzers = get_param("analyzers", [])
@@ -176,7 +179,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         repo_path = (launch_data or {}).get("project_path", project_path)
         trim_path = (launch_data or {}).get("trim_path", "")
 
-        results = upload_results(
+        results = upload_results( #TODO: change to usage defect dojo classes
             output_dir=(launch_data or {}).get("output_dir", output_dir),
             analyzers_cfg_path=(launch_data or {}).get("tmp_analyzer_config_path"),
             product_name=dojo_product_name or (project_name or ""),
@@ -200,7 +203,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
 
-            res = watch_deduplication.apply_async(args=[pipeline_id], countdown=60)
+            res = watch_deduplication.apply_async(args=[pipeline_id, log_level], countdown=5)
             pipeline.watch_dedup_task_id = res.id
             pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
@@ -218,7 +221,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
 
 @shared_task(bind=True)
-def watch_deduplication(self, pipeline_id: int) -> None:
+def watch_deduplication(self, pipeline_id: str, log_level) -> None:
     """Monitor deduplication progress and finalise the pipeline.
 
     This task polls the ``Test`` model to determine when all imported
@@ -228,31 +231,36 @@ def watch_deduplication(self, pipeline_id: int) -> None:
     Celery task is acceptable here because we perform a short sleep
     between checks and exit when complete.
     """
-    # Resolve Test model lazily to avoid circular imports
     pipeline = AISTPipeline.objects.get(id=pipeline_id)
-    # If there are no test IDs recorded something went wrong; finish early
+
+    logger = _install_db_logging(pipeline_id, log_level)
     if not pipeline.tests:
         pipeline.status = AISTStatus.FINISHED
         pipeline.save(update_fields=['status', 'updated'])
+        logger.warning("No tests to wait")
         return
     # Poll until all deduplication flags are true
-    while True:
-        # Reload pipeline to capture any manual status change
-        pipeline.refresh_from_db()
-        # Exit early if user or another task finished the pipeline
-        if pipeline.status == AISTStatus.FINISHED:
-            return
-        # Query for tests still undergoing deduplication
-        remaining = pipeline.tests.filter(deduplication_finished=False).count()
-        if remaining > 0:
-            # Sleep for a minute before checking again
-            time.sleep(60)
-            continue
-        # All tests deduplicated
-        pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
-        pipeline.save(update_fields=['status', 'updated'])
-        # Placeholder for future AI integration.  In this initial
-        # version we immediately mark the pipeline finished.
-        pipeline.status = AISTStatus.FINISHED
-        pipeline.save(update_fields=['status', 'updated'])
-        return
+    try:
+        while True:
+
+                # Reload pipeline to capture any manual status change
+                pipeline.refresh_from_db()
+                # Exit early if user or another task finished the pipeline
+                if pipeline.status == AISTStatus.FINISHED:
+                    return
+                # Query for tests still undergoing deduplication
+                remaining = pipeline.tests.filter(deduplication_complete=False).count()
+                if remaining > 0:
+                    # Sleep for a minute before checking again
+                    time.sleep(60)
+                    continue
+                # All tests deduplicated
+                pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
+                pipeline.save(update_fields=['status', 'updated'])
+                # Placeholder for future AI integration.  In this initial
+                # version we immediately mark the pipeline finished.
+                pipeline.status = AISTStatus.FINISHED
+                pipeline.save(update_fields=['status', 'updated'])
+                return
+    except Exception as exc:
+        logger.error("Exception while waiting for deduplication to finish: %s", exc)

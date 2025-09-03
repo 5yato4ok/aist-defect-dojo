@@ -28,12 +28,22 @@ class AISTPipelineRunForm(forms.Form):
         initial="INFO",
         label="Log level",
     )
-    languages = forms.MultipleChoiceField(choices=[], required=False, label="Languages")
-    analyzers = forms.MultipleChoiceField(choices=[], required=False, label="Analyzers")
+    languages = forms.MultipleChoiceField(choices=[], required=False, label="Languages", widget=forms.CheckboxSelectMultiple)
+    analyzers = forms.MultipleChoiceField(choices=[], required=False, label="Specific analyzers to launch", widget=forms.CheckboxSelectMultiple)
     time_class_level = forms.ChoiceField(choices=[], required=False, label="Analyzers time class")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Apply Bootstrap classes for consistent look & feel
+        self.fields["project"].widget.attrs.update({"class": "form-select"})
+        self.fields["log_level"].widget.attrs.update({"class": "form-select"})
+        self.fields["time_class_level"].widget.attrs.update({"class": "form-select"})
+        self.fields["rebuild_images"].widget.attrs.update({"class": "form-check-input"})
+        # CheckboxSelectMultiple: class will be applied to each checkbox input
+        self.fields["languages"].widget.attrs.update({"class": "form-check-input"})
+        self.fields["analyzers"].widget.attrs.update({"class": "form-check-input"})
+
         cfg = _load_analyzers_config()
         if cfg:
             self.fields["languages"].choices = [(x, x) for x in cfg.get_supported_languages()]

@@ -9,9 +9,11 @@ from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseForbidden, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, StreamingHttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, StreamingHttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from dojo.deduplication_tracker import TestDeduplicationProgress
+from django.db.models import Count
 from .tasks import run_sast_pipeline
 from .forms import AISTPipelineRunForm  # type: ignore
 
@@ -130,3 +132,58 @@ def stream_logs_sse(request, id: str):
     resp["Cache-Control"] = "no-cache, no-transform"
     resp["X-Accel-Buffering"] = "no"
     return resp
+
+def pipeline_progress_json(request, id: str):
+    """
+    Return deduplication progress for a pipeline as JSON (per Test and overall).
+    Progress counts findings, not just tests with a boolean flag.
+    """
+    pipeline = get_object_or_404(AISTPipeline, id=id)
+
+    tests = (
+        pipeline.tests
+        .select_related("engagement")
+        .annotate(total_findings=Count("finding", distinct=True))
+        .order_by("id")
+    )
+
+    tests_payload = []
+    overall_total = 0
+    overall_processed = 0
+
+    for t in tests:
+        # Ensure progress row exists and is refreshed if needed
+        prog, _ = TestDeduplicationProgress.objects.get_or_create(test=t)
+        # `pending_tasks` = findings total - processed; we keep `refresh_pending_tasks()` the SSOT.
+        prog.refresh_pending_tasks()
+
+        total = getattr(t, "total_findings", 0)
+        pending = prog.pending_tasks
+        processed = max(total - pending, 0)
+        pct = 100 if total == 0 else int(processed * 100 / total)
+
+        overall_total += total
+        overall_processed += processed
+
+        tests_payload.append({
+            "test_id": t.id,
+            "test_name": getattr(t, "title", None) or f"Test #{t.id}",
+            "total_findings": total,
+            "processed": processed,
+            "pending": pending,
+            "percent": pct,
+            "completed": bool(prog.deduplication_complete),
+        })
+
+    overall_pct = 100 if overall_total == 0 else int(overall_processed * 100 / overall_total)
+
+    return JsonResponse({
+        "status": pipeline.status,
+        "overall": {
+            "total_findings": overall_total,
+            "processed": overall_processed,
+            "pending": max(overall_total - overall_processed, 0),
+            "percent": overall_pct,
+        },
+        "tests": tests_payload,
+    })

@@ -12,35 +12,108 @@
 
 <hr/>
 
-<h4>Logs</h4>
-<pre id="logbox" style="max-height: 50vh; overflow: auto; background:#101317; color:#ddd; padding:12px; border-radius:6px;">{{ pipeline.logs|default:"No logs yet." }}</pre>
+{# --- Status specific UI --- #}
+{% if pipeline.status == "WAITING_DEDUPLICATION_TO_FINISH" %}
+  {% include "dojo/aist/_status_waiting_dedup.html" %}
+{% elif pipeline.status == "WAITING_RESULT_FROM_AI" %}
+  {% include "dojo/aist/_status_waiting_ai.html" %}
+{% elif pipeline.status == "FINISHED" %}
+  {% include "dojo/aist/_status_finished.html" %}
+{% endif %}
+
+
+{# --- Logs (collapsible) --- #}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span>Logs</span>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-secondary d-flex align-items-center"
+      id="logsToggleBtn"
+      aria-controls="logsCollapse"
+      aria-expanded="false"
+      {# Bootstrap 5 attrs #}
+      data-bs-toggle="collapse"
+      data-bs-target="#logsCollapse"
+      {# Bootstrap 4 attrs #}
+      data-toggle="collapse"
+      data-target="#logsCollapse"
+    >
+      <i class="fa fa-chevron-down me-1" id="logsChevron" aria-hidden="true"></i>
+      <span id="logsToggleText">Show</span>
+    </button>
+  </div>
+
+  <div class="collapse" id="logsCollapse">
+    <div class="card-body p-0">
+      <pre id="logbox"
+           style="max-height: 50vh; overflow: auto; background:#101317; color:#ddd; padding:12px; border-radius:0 0 .5rem .5rem; margin:0;">{{ pipeline.logs|default:"No logs yet." }}</pre>
+    </div>
+  </div>
+</div>
 
 <script>
 (function() {
+  // --- SSE stream for pipeline logs ---
   const src = new EventSource("{% url 'dojo_aist:pipeline_logs_stream' pipeline.id %}");
   const box = document.getElementById("logbox");
   const st  = document.getElementById("pl-status");
   let autoscroll = true;
 
-  box.addEventListener('scroll', () => {
-    autoscroll = (box.scrollTop + box.clientHeight + 5) >= box.scrollHeight;
-  });
+  // Auto-scroll behavior: only if user hasn't scrolled up
+  if (box) {
+    box.addEventListener('scroll', () => {
+      autoscroll = (box.scrollTop + box.clientHeight + 5) >= box.scrollHeight;
+    });
+  }
 
   src.onmessage = (evt) => {
+    if (!box) return;
     if (evt && evt.data) {
-      box.textContent += "\n" + evt.data;
+      // Prepend newline for readability if not empty
+      box.textContent += (box.textContent ? "\n" : "") + evt.data;
       if (autoscroll) box.scrollTop = box.scrollHeight;
     }
   };
 
-  src.addEventListener("done", (evt) => {
-    st.textContent = "FINISHED";
+  src.addEventListener("done", () => {
+    if (st) st.textContent = "FINISHED";
     src.close();
   });
 
   src.onerror = () => {
-    // keep it silent; browser will try to reconnect
+    // Keep silent; browser will try to reconnect automatically
   };
+
+  // --- Collapsible Logs UI with persisted state (Bootstrap Collapse) ---
+  const LS_KEY = "aist.logs.expanded";
+  const logsCollapseEl = document.getElementById('logsCollapse');
+  const logsToggleBtn = document.getElementById('logsToggleBtn');
+  const logsChevron = document.getElementById('logsChevron');
+  const logsToggleText = document.getElementById('logsToggleText');
+  const logbox = document.getElementById('logbox');
+
+  function setBtnState(expanded) {
+    if (logsChevron) logsChevron.classList.toggle('fa-rotate-180', expanded);
+    if (logsToggleText) logsToggleText.textContent = expanded ? 'Hide' : 'Show';
+    if (logsToggleBtn) logsToggleBtn.setAttribute('aria-expanded', String(expanded));
+  }
+
+  // Restore state
+  const wantExpanded = localStorage.getItem(LS_KEY) === '1';
+  if (wantExpanded && logsCollapseEl) logsCollapseEl.classList.add('show');
+  setBtnState(wantExpanded);
+
+  // Works for both BS4 and BS5
+  logsCollapseEl && logsCollapseEl.addEventListener('shown.bs.collapse', () => {
+    localStorage.setItem(LS_KEY, '1');
+    setBtnState(true);
+    if (logbox) logbox.scrollTop = logbox.scrollHeight;
+  });
+  logsCollapseEl && logsCollapseEl.addEventListener('hidden.bs.collapse', () => {
+    localStorage.setItem(LS_KEY, '0');
+    setBtnState(false);
+  });
 })();
 </script>
 {% endblock %}
