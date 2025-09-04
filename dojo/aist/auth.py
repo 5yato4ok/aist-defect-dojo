@@ -4,6 +4,11 @@ from rest_framework import exceptions
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 
+class CallbackUser(AnonymousUser):
+    @property
+    def is_authenticated(self):
+        return True
+
 class CallbackTokenAuthentication(BaseAuthentication):
     keyword = b"Bearer"
 
@@ -19,4 +24,4 @@ class CallbackTokenAuthentication(BaseAuthentication):
         if token != getattr(settings, "CALLBACK_SECRET", ""):
             raise exceptions.AuthenticationFailed("Invalid token")
 
-        return (AnonymousUser(), None)
+        return CallbackUser(), None

@@ -2002,3 +2002,5 @@ AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist-proj
 CALLBACK_SECRET = "super_secret_token"
 REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += ("dojo.aist.auth.CallbackTokenAuthentication",)
 REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] += ("rest_framework.permissions.IsAuthenticated",)
+
+LOGIN_EXEMPT_URLS += (r"^aist/pipelines/[^/]+/callback/?$",)

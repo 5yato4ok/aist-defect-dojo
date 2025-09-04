@@ -287,8 +287,8 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
             if triage_secret:
                 headers["X-AIST-Signature"] = triage_secret
             log.info("Sending AI triage request: url=%s payload=%s", webhook_url, payload)
-            #resp = requests.post(webhook_url, data=body_bytes, headers=headers, timeout=webhook_timeout)
-            #resp.raise_for_status()
+            resp = requests.post(webhook_url, data=body_bytes, headers=headers, timeout=webhook_timeout)
+            resp.raise_for_status()
         except requests.RequestException as exc:
             log.error("AI triage POST failed: %s", exc, exc_info=True)
             pipeline.status = AISTStatus.FINISHED
@@ -298,7 +298,7 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
         pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
         pipeline.save(update_fields=["status", "updated"])
 
-        #log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
+        log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
 
 
 
@@ -334,7 +334,7 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
                 remaining = pipeline.tests.filter(deduplication_complete=False).count()
                 if remaining > 0:
                     # Sleep for 10 seconds before checking again
-                    time.sleep(10)
+                    time.sleep(3)
                     continue
 
                 send_request_to_ai(pipeline_id,log_level)

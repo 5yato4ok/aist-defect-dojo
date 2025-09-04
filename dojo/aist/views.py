@@ -69,15 +69,15 @@ def aist_default_analyzers(request):
 @permission_classes([IsAuthenticated])
 def pipeline_callback(request, id: int):
     try:
-        get_object_or_404(AISTPipeline, id=id)
-        response_from_ai = request.json()
+        get_object_or_404(AISTPipeline, id=str(id))
+        response_from_ai = request.data
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     errors = response_from_ai.pop("errors", None)
     logger = _install_db_logging(str(id))
     if errors:
-        logger.errors(errors)
+        logger.error(errors)
 
     with transaction.atomic():
         pipeline = (
