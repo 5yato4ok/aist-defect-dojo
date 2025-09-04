@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict
 
-from django.contrib import messages
+
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse, HttpResponseForbidden, Http404
@@ -24,7 +24,7 @@ from .tasks import run_sast_pipeline
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 from .tasks import _install_db_logging
 
-from .models import AISTPipeline, AISTStatus
+
 from .utils import DatabaseLogHandler, stop_pipeline
 from .auth import CallbackTokenAuthentication
 import time
@@ -192,7 +192,6 @@ def start_pipeline(request: HttpRequest) -> HttpResponse:
             async_result = run_sast_pipeline.delay(pipeline_id, params)
             p.run_sast_task_id = async_result.id
             p.save(update_fields=["run_task_id"])
-            messages.success(request, "SAST pipeline launched")
             return redirect('dojo_aist:pipeline_detail', id=pipeline_id)
     else:
         form = AISTPipelineRunForm()
@@ -221,8 +220,6 @@ def stop_pipeline_view(request, id: str):
     with transaction.atomic():
         stop_pipeline(pipeline)
     pipeline.save(update_fields=["status"])
-    messages.info(request, "Pipeline stopped successfully.")
-    messages.success(request, "Pipeline was stopped and marked as FINISHED.")
     return redirect("dojo_aist:pipeline_detail", id=pipeline.id)
 
 @login_required
@@ -234,7 +231,6 @@ def delete_pipeline_view(request, id: str):
     pipeline = get_object_or_404(AISTPipeline, id=id)
     if request.method == "POST":
         pipeline.delete()
-        messages.success(request, "Pipeline deleted.")
         return redirect("dojo_aist:start_pipeline")
     return render(request, "dojo/aist/confirm_delete.html", {"pipeline": pipeline})
 

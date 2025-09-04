@@ -55,98 +55,232 @@
 </div>
 
 <script>
-(function() {
-  // --- SSE stream for pipeline logs ---
-  const src = new EventSource("{% url 'dojo_aist:pipeline_logs_stream' pipeline.id %}");
-  const box = document.getElementById("logbox");
-  const st  = document.getElementById("pl-status");
-  let autoscroll = true;
+(function () {
+  // ---------- DOM ----------
+  const container = document.getElementById("pipeline-status-container");
+  const st = document.getElementById("pl-status");
+  const logbox = document.getElementById("logbox");
 
-  // Auto-scroll behavior: only if user hasn't scrolled up
-  if (box) {
-    box.addEventListener('scroll', () => {
-      autoscroll = (box.scrollTop + box.clientHeight + 5) >= box.scrollHeight;
+  // ---------- helpers ----------
+  function setStatusText(s) {
+    if (!st) return;
+    if (typeof s !== "string") return;
+    const t = s.trim();
+    if (t) st.textContent = t;
+  }
+
+  // ====== FINISHED hydrator (duration + JSON) ======
+  function readJson(root=document) {
+    const raw = root.querySelector?.('#aist-json-raw');
+    if (!raw) return {};
+    try {
+      return JSON.parse((raw.textContent || 'null').trim()) || {};
+    } catch (e) {
+      return {"_error":"Failed to parse JSON","detail":String(e)};
+    }
+  }
+  function jsonSyntaxHighlight(s) {
+    return s
+      .replace(/(&|<|>)/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))
+      .replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,(m)=>{
+        let cls='text-dark';
+        if (/^"/.test(m)) cls = /:$/.test(m)?'text-secondary':'text-primary';
+        else if (/true|false/.test(m)) cls='text-success';
+        else if (/null/.test(m)) cls='text-muted';
+        else cls='text-info';
+        return '<span class="'+cls+'">'+m+'</span>';
+      });
+  }
+  function hydrateJson(root=document) {
+    const view = root.querySelector?.('#aist-json-view'); if (!view) return;
+    const pretty = JSON.stringify(readJson(root) ?? {}, null, 2);
+    view.innerHTML = jsonSyntaxHighlight(pretty);
+  }
+  function hydrateDuration(root=document) {
+    const durEl = root.querySelector?.('#aist-duration'); if (!durEl) return;
+    const humanEl = root.querySelector?.('#aist-duration-human');
+    const start = new Date(durEl.dataset.start || '');
+    const end   = new Date(durEl.dataset.end || '');
+    if (isNaN(start) || isNaN(end)) return;
+    const s = Math.max(0, Math.floor((end - start)/1000));
+    const hh=String(Math.floor(s/3600)).padStart(2,'0');
+    const mm=String(Math.floor((s%3600)/60)).padStart(2,'0');
+    const ss=String(s%60).padStart(2,'0');
+    durEl.textContent = `${hh}:${mm}:${ss}`;
+    if (humanEl) {
+      let txt;
+      if (s<60) txt='(just now)';
+      else if (s<3600){ const m=Math.round(s/60); txt=m===1?'(~ 1 minute)':`(~ ${m} minutes)`; }
+      else { const h=Math.floor(s/3600), m=Math.round((s%3600)/60); txt=m?`(~ ${h} hours ${m} minutes)`:`(~ ${h} hours)`; }
+      humanEl.textContent = txt;
+    }
+  }
+  function wireJsonButtons(root=document) {
+    const view = root.querySelector?.('#aist-json-view');
+    const toggleBtn = root.querySelector?.('#aist-json-toggle');
+    const copyBtn = root.querySelector?.('#aist-json-copy');
+    if (toggleBtn && view && !toggleBtn.dataset.wired) {
+      let visible = true;
+      toggleBtn.addEventListener('click', function(){
+        visible = !visible;
+        view.style.display = visible?'block':'none';
+        this.innerHTML = visible
+          ? '<i class="fa fa-chevron-down me-1"></i>Hide'
+          : '<i class="fa fa-chevron-right me-1"></i>Show';
+      });
+      toggleBtn.dataset.wired='1';
+    }
+    if (copyBtn && !copyBtn.dataset.wired) {
+      copyBtn.addEventListener('click', async function(){
+        try {
+          const raw = root.querySelector?.('#aist-json-raw');
+          const txt = raw ? (raw.textContent || '{}') : '{}';
+          await navigator.clipboard.writeText(JSON.stringify(JSON.parse(txt), null, 2));
+          this.innerHTML = '<i class="fa fa-check me-1"></i>Copied';
+          setTimeout(()=>this.innerHTML='<i class="fa fa-clipboard me-1"></i>Copy',1500);
+        } catch {
+          this.innerHTML = '<i class="fa fa-exclamation-triangle me-1"></i>Error';
+          setTimeout(()=>this.innerHTML='<i class="fa fa-clipboard me-1"></i>Copy',1500);
+        }
+      });
+      copyBtn.dataset.wired='1';
+    }
+  }
+  function hydrateFinished(root=document) {
+    hydrateDuration(root);
+    hydrateJson(root);
+    wireJsonButtons(root);
+  }
+
+  // ====== WAITING_DEDUP hydrator (progress polling) ======
+  let dedupTimer = null;
+  function stopDedupPolling(){ if (dedupTimer){ clearInterval(dedupTimer); dedupTimer=null; } }
+
+  function renderOverall(overall, root=document){
+    const bar   = root.querySelector?.('#overall-bar');
+    const badge = root.querySelector?.('#overall-badge');
+    const rem   = root.querySelector?.('#overall-remaining');
+    if (!bar || !badge || !rem) return;
+    const pct = Math.max(0, Math.min(100, parseInt(overall.percent || 0)));
+    bar.style.width = pct + "%";
+    bar.textContent = pct + "%";
+    badge.textContent = (overall.processed || 0) + " / " + (overall.total_findings || 0);
+    rem.textContent = "(remaining: " + (overall.pending || 0) + ")";
+  }
+  function renderRows(tests, root=document){
+    const tbody = root.querySelector?.('#tests-progress-body'); if (!tbody) return;
+    const rows = (tests||[]).map(t=>{
+      const pct = Math.max(0, Math.min(100, parseInt(t.percent || 0)));
+      const badge = `${t.processed || 0} / ${t.total_findings || 0}`;
+      return `
+        <tr>
+          <td><span class="text-nowrap">${t.test_name || ("Test #"+t.test_id)}</span></td>
+          <td>
+            <div class="progress" style="height:16px;">
+              <div class="progress-bar ${t.completed?'bg-success':''}" role="progressbar"
+                   style="width:${pct}%;" aria-valuemin="0" aria-valuemax="100">${pct}%</div>
+            </div>
+          </td>
+          <td class="text-end"><span class="badge bg-secondary">${badge}</span></td>
+        </tr>`;
+    }).join("");
+    tbody.innerHTML = rows || `<tr><td colspan="3" class="text-muted">No tests attached.</td></tr>`;
+  }
+  function hydrateWaitingDedup(root=document){
+    stopDedupPolling();
+    // если блок ещё не отрисован — выходим
+    if (!root.querySelector?.('#overall-bar')) return;
+
+    const url = "{% url 'dojo_aist:pipeline_progress' pipeline.id %}";
+    const poll = () => {
+      fetch(url)
+        .then(r=>r.json())
+        .then(data=>{
+          renderOverall(data.overall || {}, root);
+          renderRows(data.tests || [], root);
+
+          const s = (data.status || '').trim();
+          if (s && s !== "WAITING_DEDUPLICATION_TO_FINISH" && s !== "WAITING_FOR_DEDUP"){
+            stopDedupPolling();
+          }
+        })
+        .catch(()=>{});
+    };
+    poll();
+    dedupTimer = setInterval(poll, 2500);
+  }
+
+
+  const HYDRATORS = {
+    "FINISHED": hydrateFinished,
+    "WAITING_DEDUPLICATION_TO_FINISH": hydrateWaitingDedup,
+  };
+  function runHydratorFor(status, root=container){
+    stopDedupPolling();           // не плодим таймеры
+    const fn = HYDRATORS[(status||"").trim()];
+    if (fn) fn(root);
+  }
+
+
+  const initialStatus = (st?.textContent || "").trim();
+  if (initialStatus) runHydratorFor(initialStatus, document);
+
+  // ---------- Logs SSE ----------
+  const srcLogs = new EventSource("{% url 'dojo_aist:pipeline_logs_stream' pipeline.id %}");
+  let autoscroll = true;
+  if (logbox) {
+    logbox.addEventListener("scroll", () => {
+      autoscroll = (logbox.scrollTop + logbox.clientHeight + 5) >= logbox.scrollHeight;
     });
   }
-
-  src.onmessage = (evt) => {
-    if (!box) return;
-    if (evt && evt.data) {
-      // Prepend newline for readability if not empty
-      box.textContent += (box.textContent ? "\n" : "") + evt.data;
-      if (autoscroll) box.scrollTop = box.scrollHeight;
-    }
+  srcLogs.onmessage = (evt) => {
+    if (!logbox || !evt?.data) return;
+    logbox.textContent += (logbox.textContent ? "\n" : "") + evt.data;
+    if (autoscroll) logbox.scrollTop = logbox.scrollHeight;
   };
-
-  src.addEventListener("done", () => {
-    if (st) st.textContent = "FINISHED";
-    src.close();
+  srcLogs.addEventListener("done", () => {
+    setStatusText("FINISHED");
+    runHydratorFor("FINISHED", document);
+    srcLogs.close();
   });
 
-  src.onerror = () => {
-    // Keep silent; browser will try to reconnect automatically
-  };
-
-  // --- Collapsible Logs UI with persisted state (Bootstrap Collapse) ---
-  const LS_KEY = "aist.logs.expanded";
-  const logsCollapseEl = document.getElementById('logsCollapse');
-  const logsToggleBtn = document.getElementById('logsToggleBtn');
-  const logsChevron = document.getElementById('logsChevron');
-  const logsToggleText = document.getElementById('logsToggleText');
-  const logbox = document.getElementById('logbox');
-
-  function setBtnState(expanded) {
-    if (logsChevron) logsChevron.classList.toggle('fa-rotate-180', expanded);
-    if (logsToggleText) logsToggleText.textContent = expanded ? 'Hide' : 'Show';
-    if (logsToggleBtn) logsToggleBtn.setAttribute('aria-expanded', String(expanded));
-  }
-
-  // Restore state
-  const wantExpanded = localStorage.getItem(LS_KEY) === '1';
-  if (wantExpanded && logsCollapseEl) logsCollapseEl.classList.add('show');
-  setBtnState(wantExpanded);
-
-  // Works for both BS4 and BS5
-  logsCollapseEl && logsCollapseEl.addEventListener('shown.bs.collapse', () => {
-    localStorage.setItem(LS_KEY, '1');
-    setBtnState(true);
-    if (logbox) logbox.scrollTop = logbox.scrollHeight;
-  });
-  logsCollapseEl && logsCollapseEl.addEventListener('hidden.bs.collapse', () => {
-    localStorage.setItem(LS_KEY, '0');
-    setBtnState(false);
-  });
-
-  // Update pipeline.state
-  const container = document.getElementById("pipeline-status-container");
-
+  // ---------- Status SSE ----------
   const srcStatus = new EventSource("{% url 'dojo_aist:pipeline_status_stream' pipeline.id %}");
 
   srcStatus.onmessage = (evt) => {
-    if (st) st.textContent = evt.data;
+    if (evt?.data) setStatusText(evt.data);
   };
 
   srcStatus.addEventListener("status", (evt) => {
+    if (evt?.data) setStatusText(evt.data);
+
     fetch(window.location.href, { headers: { "X-Partial": "status" } })
-      .then(r => r.text())
-      .then(html => {
+      .then(r=>r.text())
+      .then(html=>{
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
         const newContainer = doc.getElementById("pipeline-status-container");
-        if (newContainer && container) {
-          container.innerHTML = newContainer.innerHTML;
-        }
+        if (!newContainer || !container) return;
+
+        container.innerHTML = newContainer.innerHTML;
+
+        const ds = newContainer.getAttribute("data-status");
+        const s = (ds || evt?.data || st?.textContent || "").trim();
+        if (s) runHydratorFor(s, container);
       })
       .catch(console.warn);
   });
 
-  srcStatus.addEventListener("done", () => {
+  srcStatus.addEventListener("done", (evt) => {
+    const s = (evt?.data || "FINISHED");
+    setStatusText(s);
+    runHydratorFor(s, document);
     srcStatus.close();
   });
 
-  srcStatus.onerror = () => {
-    // Silently, browser will reconect
-  };
+  srcStatus.onerror = () => {  };
 })();
 </script>
+
+
 {% endblock %}
