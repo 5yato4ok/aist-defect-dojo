@@ -6,7 +6,6 @@ from dojo.models import Test, Product
 class AISTStatus(models.TextChoices):
     SAST_LAUNCHED = "SAST_LAUNCHED", "Launched"
     UPLOADING_RESULTS = "UPLOADING_RESULTS", "Uploading Results"
-
     WAITING_DEDUPLICATION_TO_FINISH = "WAITING_DEDUPLICATION_TO_FINISH", "Waiting Deduplication To Finish"
     WAITING_RESULT_FROM_AI = "WAITING_RESULT_FROM_AI", "Waiting Result From AI"
     FINISHED = "FINISHED", "Finished"
@@ -18,7 +17,6 @@ class AISTProject(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     supported_languages = models.JSONField(default=list, blank=True)
     script_path = models.CharField(max_length=1024)
-    project_path = models.CharField(max_length=1024)
     project_version = models.CharField(max_length=255, null=True, blank=True)
     output_dir = models.CharField(max_length=1024, default="/tmp/aist-output")
 
@@ -40,11 +38,10 @@ class AISTPipeline(models.Model):
     launch_data = models.JSONField(default=dict, blank=True)
     logs = models.TextField(default="", blank=True)
 
-    # Optional: Celery task ids to enable STOP action
     run_task_id = models.CharField(max_length=64, null=True, blank=True)
     watch_dedup_task_id = models.CharField(max_length=64, null=True, blank=True)
 
-    response_from_ai = models.TextField(default="", blank=True)
+    response_from_ai = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("-created",)

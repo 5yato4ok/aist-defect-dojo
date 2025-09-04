@@ -1,7 +1,137 @@
-{# AIST: Waiting for AI results placeholder. Replace with your real form later. #}
-<div class="alert alert-primary d-flex align-items-center" role="alert">
+{# dojo/aist/_status_waiting_ai.html #}
+{# AIST: Waiting for AI results with animated stork #}
+
+<div class="alert alert-primary d-flex align-items-center mb-3" role="alert" aria-live="polite">
   <i class="fa fa-magic me-2" aria-hidden="true"></i>
   <div>
-    <strong>Waiting for AI results.</strong> You can place an AI review form or controls here.
+    <strong>Waiting for AI results…</strong>
+    The pipeline finished; we’re waiting for the AI service to respond.
   </div>
 </div>
+
+<div class="card shadow-sm">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa fa-hourglass-half" aria-hidden="true"></i>
+    <span class="fw-semibold">AI review in progress</span>
+  </div>
+  <div class="card-body">
+
+    <!-- Walk track -->
+    <div class="aist-track position-relative border rounded bg-light" aria-hidden="true" title="Aist is walking…">
+      <!-- Moving wrapper -->
+      <div class="aist-walker" id="aistWalker" tabindex="0" aria-label="Animated walking stork (decorative)">
+        <!-- Flippable SVG -->
+        <div class="aist-svg" id="aistSvg" role="img" aria-label="Stork">
+          <!-- Simple vector stork (single-color, scalable) -->
+          <svg viewBox="0 0 160 120" width="120" height="90" style="display:block">
+            <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <!-- body -->
+              <ellipse cx="80" cy="60" rx="34" ry="22" fill="currentColor" opacity="0.1"></ellipse>
+              <path d="M52,60c8,-10 20,-14 28,-14c8,0 20,4 28,14" />
+              <!-- neck & head -->
+              <path d="M96,52 C112,40 118,30 120,20" />
+              <circle cx="120" cy="18" r="4" fill="currentColor"></circle>
+              <!-- beak -->
+              <path d="M124,18 l20,-4 l-20,-4 z" fill="currentColor"></path>
+              <!-- tail -->
+              <path d="M52,60 l-16,6 l10,-14" />
+              <!-- wings -->
+              <path d="M66,54 c-4,2 -10,10 -6,18 c8,2 12,-6 14,-10" />
+              <path d="M94,54 c6,4 10,12 2,18 c-8,0 -10,-8 -12,-12" />
+              <!-- legs (animated) -->
+              <g class="aist-legs">
+                <path d="M74,80 l-6,24" />
+                <path d="M86,80 l8,24" />
+                <!-- feet -->
+                <path d="M68,104 l-8,4" />
+                <path d="M94,104 l10,4" />
+              </g>
+              <!-- ground hint -->
+              <path d="M4,114 H156" opacity="0.2"></path>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-text mt-2">
+      This is a decorative animation. It pauses on hover or keyboard focus.
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .aist-track {
+    min-height: 140px;
+    padding: 16px;
+    overflow: hidden;
+  }
+  .aist-track,
+  .aist-walker,
+  .aist-svg {
+    color: var(--bs-primary);
+  }
+  .aist-walker {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    width: 120px; /* must match SVG width for correct travel distance */
+    animation: aist-walk 3.8s linear infinite alternate;
+    will-change: transform,left;
+  }
+  .aist-walker:focus,
+  .aist-track:hover .aist-walker {
+    animation-play-state: paused;
+  }
+  .aist-svg {
+    transform-origin: center;
+    will-change: transform;
+    transition: transform 200ms ease-out;
+  }
+  /* Leg stepping */
+  .aist-legs path {
+    transform-origin: 80px 100px; /* approximate hip pivot */
+    animation: aist-legs 0.6s ease-in-out infinite alternate;
+  }
+
+  @keyframes aist-walk {
+    from { left: 0; }
+    to   { left: calc(100% - 120px); }
+  }
+  @keyframes aist-legs {
+    from { transform: rotate(-6deg); }
+    to   { transform: rotate(6deg); }
+  }
+  /* Reduced motion: freeze animation */
+  @media (prefers-reduced-motion: reduce) {
+    .aist-walker, .aist-legs path { animation: none !important; }
+  }
+</style>
+
+<script>
+  (function () {
+    const walker = document.getElementById('aistWalker');
+    const bird = document.getElementById('aistSvg');
+
+    if (!walker || !bird) return;
+
+    // Flip the stork on each edge
+    walker.addEventListener('animationiteration', () => {
+      bird.classList.toggle('aist-flipped');
+      // we flip only the inner SVG to preserve the outer translateX animation
+      if (bird.classList.contains('aist-flipped')) {
+        bird.style.transform = 'scaleX(-1)';
+      } else {
+        bird.style.transform = 'scaleX(1)';
+      }
+    });
+
+    // Also flip immediately if we start mid-cycle (e.g., when resuming)
+    setTimeout(() => {
+      const computed = getComputedStyle(walker);
+      const dir = computed.animationDirection || 'alternate';
+      // No-op here; kept for future extensibility if you add RTL/LTR toggles
+    }, 0);
+  })();
+</script>

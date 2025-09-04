@@ -10,5 +10,5 @@ urlpatterns = [
     path("pipelines/<str:id>/delete/", delete_pipeline_view, name="pipeline_delete"),
     path("pipelines/<str:id>/logs/stream/", stream_logs_sse, name="pipeline_logs_stream"),
     path("pipelines/<str:id>/progress/", pipeline_progress_json, name="pipeline_progress"),
-    path("callback/pipeline/<str:id>/", pipeline_callback, name="pipeline_callback")
+    path("pipelines/<str:id>/callback", pipeline_callback, name="pipeline_callback")
 ]

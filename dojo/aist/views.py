@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .tasks import run_sast_pipeline
 from .forms import AISTPipelineRunForm  # type: ignore
+from .tasks import _install_db_logging
 
 from .models import AISTPipeline, AISTStatus
 from .utils import DatabaseLogHandler, stop_pipeline
@@ -29,22 +30,28 @@ from .auth import CallbackTokenAuthentication
 @authentication_classes([CallbackTokenAuthentication])   # эта строка привязывает проверку заголовка
 @permission_classes([IsAuthenticated])
 def pipeline_callback(request, id: int):
-    # show response in form
-    # save it to db
-    # set status of pipeline as finished
-    pass
-    status_value = request.data.get("status")
-    if not status_value:
-        return Response({"error": "Missing status"}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        p = AISTPipeline.objects.get(id=id)
-    except AISTPipeline.DoesNotExist:
-        return Response({"error": "Pipeline not found"}, status=status.HTTP_404_NOT_FOUND)
+        get_object_or_404(AISTPipeline, id=id)
+        response_from_ai = request.json()
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    p.status = status_value
-    p.save(update_fields=["status", "updated"])
-    return Response({"ok": True, "pipeline_id": id, "new_status": status_value})
+    errors = response_from_ai.pop("errors", None)
+    logger = _install_db_logging(str(id))
+    if errors:
+        logger.errors(errors)
+
+    with transaction.atomic():
+        pipeline = (
+            AISTPipeline.objects
+            .select_for_update()
+            .get(id=id)
+        )
+        pipeline.response_from_ai = response_from_ai
+        pipeline.status = AISTStatus.FINISHED
+        pipeline.save(update_fields=["status", "response_from_ai", "updated"])
+
+    return Response({"ok": True})
 
 
 def start_pipeline(request: HttpRequest) -> HttpResponse:

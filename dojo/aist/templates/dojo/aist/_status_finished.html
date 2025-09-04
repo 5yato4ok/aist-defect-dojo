@@ -1,7 +1,180 @@
-{# AIST: Finished placeholder. Replace with your finalization form later. #}
-<div class="alert alert-success d-flex align-items-center" role="alert">
+{# dojo/aist/_status_finished.html #}
+{# Final status panel for AISTPipeline #}
+
+<div class="alert alert-success d-flex align-items-center mb-3" role="alert">
   <i class="fa fa-check-circle me-2" aria-hidden="true"></i>
   <div>
-    <strong>Pipeline finished.</strong> You can show summary actions here (e.g., open findings, export, start next run).
+    <strong>Pipeline finished.</strong>
   </div>
 </div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      <i class="fa fa-flask" aria-hidden="true"></i>
+      <span class="fw-semibold">Summary</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    {# Launched analyzers #}
+    <div class="mb-3">
+      <div class="text-muted small mb-1">
+        <i class="fa fa-list-ul me-1"></i> Launched analyzers
+      </div>
+      {% with analyzers=pipeline.launch_data.launched_analyzers %}
+        {% if analyzers %}
+          <div class="d-flex flex-wrap gap-2">
+            {% for a in analyzers %}
+              <span class="badge bg-primary">{{ a }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <span class="text-muted">No analyzers recorded.</span>
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    {# Duration: updated - started #}
+    <div class="mb-2">
+      <div class="text-muted small mb-1">
+        <i class="fa fa-clock-o me-1"></i> Duration
+      </div>
+      <div>
+        <span
+          id="aist-duration"
+          data-start="{{ pipeline.started|date:'c' }}"
+          data-end="{{ pipeline.updated|date:'c' }}"
+          title="Started: {{ pipeline.started|date:'Y-m-d H:i:s T' }} • Finished: {{ pipeline.updated|date:'Y-m-d H:i:s T' }}"
+          class="fw-semibold"
+        >—:—:—</span>
+        <span class="text-muted ms-2">
+          (about {{ pipeline.updated|timesince:pipeline.started }})
+        </span>
+      </div>
+    </div>
+
+    <hr class="my-3"/>
+
+    {# Pretty JSON: response_from_ai #}
+    <div>
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="text-muted small">
+          <i class="fa fa-code me-1"></i> AI response (JSON)
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="aist-json-toggle">
+            <i class="fa fa-chevron-down me-1"></i>Toggle
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="aist-json-copy">
+            <i class="fa fa-clipboard me-1"></i>Copy
+          </button>
+        </div>
+      </div>
+
+      {# Hidden raw JSON payload for safe parsing #}
+      <script id="aist-json-raw" type="application/json">
+        {{ pipeline.response_from_ai|default:{}|json_script:"aist_json_dummy" }}
+      </script>
+
+      <pre id="aist-json-view"
+           class="border rounded bg-light p-3 small"
+           style="max-height: 420px; overflow:auto; white-space: pre-wrap; word-break: break-word;"></pre>
+
+      <div class="form-text">
+        Parsed from <code>pipeline.response_from_ai</code>.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# Minimal JSON pretty-print + copy, and exact HH:MM:SS duration #}
+<script>
+(function () {
+  // Read the JSON from the <script type="application/json"> safely
+  function readJson() {
+    const raw = document.getElementById('aist-json-raw');
+    if (!raw) return {};
+    try {
+      // The child text node contains the JSON emitted by json_script
+      const txt = raw.textContent || '{}';
+      return JSON.parse(txt);
+    } catch (e) {
+      return { "_error": "Failed to parse JSON", "detail": String(e) };
+    }
+  }
+
+  // Basic syntax highlight for JSON (keys, strings, numbers, booleans, null)
+  function jsonSyntaxHighlight(jsonString) {
+    return jsonString
+      .replace(/(&|<|>)/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))
+      .replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'text-dark';
+        if (/^"/.test(match)) {
+          cls = /:$/.test(match) ? 'text-secondary' : 'text-primary';
+        } else if (/true|false/.test(match)) {
+          cls = 'text-success';
+        } else if (/null/.test(match)) {
+          cls = 'text-muted';
+        } else {
+          cls = 'text-info';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
+  }
+
+  // Render JSON
+  const jsonView = document.getElementById('aist-json-view');
+  if (jsonView) {
+    const data = readJson();
+    const pretty = JSON.stringify(data, null, 2);
+    jsonView.innerHTML = jsonSyntaxHighlight(pretty);
+  }
+
+  // Toggle collapse
+  const toggleBtn = document.getElementById('aist-json-toggle');
+  if (toggleBtn && jsonView) {
+    let visible = true;
+    toggleBtn.addEventListener('click', function () {
+      visible = !visible;
+      jsonView.style.display = visible ? 'block' : 'none';
+      this.innerHTML = (visible
+        ? '<i class="fa fa-chevron-down me-1"></i>Hide'
+        : '<i class="fa fa-chevron-right me-1"></i>Show');
+    });
+  }
+
+  // Copy
+  const copyBtn = document.getElementById('aist-json-copy');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async function () {
+      try {
+        const raw = document.getElementById('aist-json-raw');
+        const txt = raw ? (raw.textContent || '{}') : '{}';
+        await navigator.clipboard.writeText(JSON.stringify(JSON.parse(txt), null, 2));
+        this.innerHTML = '<i class="fa fa-check me-1"></i>Copied';
+        setTimeout(() => this.innerHTML = '<i class="fa fa-clipboard me-1"></i>Copy', 1500);
+      } catch (e) {
+        this.innerHTML = '<i class="fa fa-exclamation-triangle me-1"></i>Error';
+        setTimeout(() => this.innerHTML = '<i class="fa fa-clipboard me-1"></i>Copy', 1500);
+      }
+    });
+  }
+
+  // Exact HH:MM:SS duration
+  const durEl = document.getElementById('aist-duration');
+  if (durEl) {
+    const start = new Date(durEl.dataset.start);
+    const end   = new Date(durEl.dataset.end);
+    if (!isNaN(start) && !isNaN(end)) {
+      const ms = Math.max(0, end - start);
+      const s  = Math.floor(ms / 1000);
+      const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      durEl.textContent = `${hh}:${mm}:${ss}`;
+    }
+  }
+})();
+</script>

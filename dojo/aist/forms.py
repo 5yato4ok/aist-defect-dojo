@@ -57,7 +57,6 @@ class AISTPipelineRunForm(forms.Form):
             # from project model (immutable in the form)
             project_name=proj.product.name,
             script_path=proj.script_path,
-            project_path=proj.project_path,
             project_version=proj.project_version,
             supported_languages=proj.supported_languages,
             output_dir=proj.output_dir,

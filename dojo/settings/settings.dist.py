@@ -1997,6 +1997,8 @@ AIST_PIPELINE_CODE_PATH = env(
     default=str(Path(__file__).resolve().parent.parent.parent / "sast-combinator" / "tools" / "sast-pipeline")
 )
 
+AIST_RESULTS_DIR = env("AIST_RESULTS_DIR", default="/tmp/aist-projects")
+
 CALLBACK_SECRET = "super_secret_token"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

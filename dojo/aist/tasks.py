@@ -28,6 +28,8 @@ reserved for future enhancement).
 from __future__ import annotations
 
 import os
+import json
+import requests
 import sys
 import time
 import logging
@@ -39,10 +41,12 @@ from django.conf import settings
 from dojo.models import Test
 from django.db import transaction
 from django.apps import apps
+from django.urls import reverse
 
 from .models import AISTPipeline, AISTStatus
-from .utils import DatabaseLogHandler
+from .utils import DatabaseLogHandler, build_callback_url
 from ..jira_link.helper import process_jira_project_form
+from typing import Any, Dict, Iterable
 
 
 def _install_db_logging(pipeline_id: str, level=logging.INFO):
@@ -111,7 +115,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             project = pipeline.project
             project_name = project.product.name if project else None
             project_version = project.project_version if project else None
-            project_path_default = project.project_path if project else None #TODO: remove
             project_supported_languages = project.supported_languages if project else []
 
 
@@ -131,10 +134,12 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         os.environ["PIPELINE_ID"] = str(pipeline_id)
 
-        analyzers_cfg_path = os.path.join(pipeline_path, "pipeline", "config", "analyzers.yaml")
-        analyzers_helper = AnalyzersConfigHelper(analyzers_cfg_path)
+        analyzers_helper = AnalyzersConfigHelper()
 
         script_path = get_param("script_path", None)
+        if not os.path.isfile(script_path):
+            raise RuntimeError("Incorrrect script path for AIST pipeline.")
+
         output_dir = get_param("output_dir", os.path.join("/tmp", "aist_output", project_name or "project"))
         languages = get_param("languages", [])
         if isinstance(languages, str):
@@ -147,7 +152,12 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         dojo_product_name = get_param("dojo_product_name", project_name or None)
 
         dockerfile_path = os.path.join(pipeline_path, "Dockerfiles", "builder", "Dockerfile")
-        project_path = "/tmp/aist-projects" #get_param("project_path", project_path_default)
+        if not os.path.isfile(dockerfile_path):
+            raise RuntimeError("Dockerfile does not exist")
+
+        results_path = getattr(settings, "AIST_RESULTS_DIR", None)
+        if not results_path or not os.path.isdir(results_path):
+            raise RuntimeError("Results path for AIST is not setup")
 
         logger.info("Starting configure_project_run_analyses")
         launch_data = configure_project_run_analyses(
@@ -158,7 +168,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             dockerfile_path=dockerfile_path,
             context_dir=pipeline_path,
             image_name=f"project-{dojo_product_name}-builder" if dojo_product_name else "project-builder",
-            project_path=project_path,
+            project_path=results_path,
             force_rebuild=False,
             rebuild_images=rebuild_images,
             version=project_version,
@@ -167,8 +177,9 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             analyzers=analyzers,
         )
 
+        launch_data["languages"] = languages
+
         with transaction.atomic():
-            # пере-«пришиваем» объект, чтобы избежать stale instance
             pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
             pipeline.launch_data = launch_data or {}
             pipeline.status = AISTStatus.UPLOADING_RESULTS
@@ -176,7 +187,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         logger.info("Upload step starting")
 
         dojo_cfg_path = os.path.join(pipeline_path, "pipeline", "config", "defectdojo.yaml")
-        repo_path = (launch_data or {}).get("project_path", project_path)
+        repo_path = (launch_data or {}).get("project_path", results_path)
         trim_path = (launch_data or {}).get("trim_path", "")
 
         results = upload_results( #TODO: change to usage defect dojo classes
@@ -220,25 +231,75 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         raise
 
 
+def _csv(items: Iterable[Any]) -> str:
+    seen = set()
+    result: list[str] = []
+    for it in items or []:
+        s = str(it).strip()
+        if not s:
+            continue
+        if s not in seen:
+            seen.add(s)
+            result.append(s)
+    return ", ".join(result)
 
-def send_request_to_ai(self, pipeline_id: str, log_level, params) -> None:
-    pipeline = AISTPipeline.objects.get(id=pipeline_id)
-    project = pipeline.project
-    project_name = project.product.name
+def send_request_to_ai(pipeline_id: str, log_level) -> None:
+    log = _install_db_logging(pipeline_id, log_level)
+    webhook_url = getattr(
+        settings,
+        "AIST_AI_TRIAGE_WEBHOOK_URL",
+        "https://flaming.app.n8n.cloud/webhook-test/triage-sast",
+    )
 
+    webhook_timeout = getattr(settings, "AIST_AI_TRIAGE_REQUEST_TIMEOUT", 10)
+    triage_secret = getattr(settings, "AIST_AI_TRIAGE_SECRET", None)
 
-    # post https://flaming.app.n8n.cloud/webhook-test/triage-sast
-    # {
-    #   "project": {
-    #     "name": "vulpy",
-    #     "description": "...",
-    #     "languages": "Python, CSS, HTML",
-    #     "tools": "Semgrep","Snyk"
-    #   },
-    #   "pipeline_id"
-    #   "callback_url": "https://client.example.com/api/triage-callback"
-    # }
-    # https://your-defectdojo-instance/dojo/aist/callback/pipeline/123/
+    with transaction.atomic():
+        pipeline = (
+            AISTPipeline.objects
+            .select_for_update()
+            .select_related("project__product")
+            .get(id=pipeline_id)
+        )
+
+        project = pipeline.project
+        product = getattr(project, "product", None)
+        project_name = getattr(product, "name", None) or getattr(project, "project_name", "")
+
+        launch_data = pipeline.launch_data or {}
+        languages = _csv(launch_data.get("languages") or [])
+        tools = _csv(launch_data.get("launched_analyzers") or [])
+        callback_url = build_callback_url(pipeline_id)
+
+        payload: Dict[str, Any] = {
+            "project": {
+                "name": project_name,
+                "description": getattr(project, "description", "") or "",
+                "languages": languages,
+                "tools": tools,
+            },
+            "pipeline_id": str(pipeline.id),
+            "callback_url": callback_url,
+        }
+        try:
+            headers = {"Content-Type": "application/json"}
+            body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            if triage_secret:
+                headers["X-AIST-Signature"] = triage_secret
+            log.info("Sending AI triage request: url=%s payload=%s", webhook_url, payload)
+            resp = requests.post(webhook_url, data=body_bytes, headers=headers, timeout=webhook_timeout)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            log.error("AI triage POST failed: %s", exc, exc_info=True)
+            pipeline.status = AISTStatus.FINISHED
+            pipeline.save(update_fields=["status", "updated"])
+            return
+
+        pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
+        pipeline.save(update_fields=["status", "updated"])
+
+        log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
+
 
 
 
@@ -249,7 +310,7 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
     This task polls the ``Test`` model to determine when all imported
     tests have completed deduplication.  Once deduplication is
     finished the pipeline is marked as awaiting AI results and then
-    immediately set to finished.  Long running polling inside a
+    immediately set to finished. Long running polling inside a
     Celery task is acceptable here because we perform a short sleep
     between checks and exit when complete.
     """
@@ -273,16 +334,11 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
                 # Query for tests still undergoing deduplication
                 remaining = pipeline.tests.filter(deduplication_complete=False).count()
                 if remaining > 0:
-                    # Sleep for a minute before checking again
-                    time.sleep(60)
+                    # Sleep for 10 seconds before checking again
+                    time.sleep(10)
                     continue
-                # All tests deduplicated
-                pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
-                pipeline.save(update_fields=['status', 'updated'])
-                # Placeholder for future AI integration.  In this initial
-                # version we immediately mark the pipeline finished.
-                pipeline.status = AISTStatus.FINISHED
-                pipeline.save(update_fields=['status', 'updated'])
+
+                send_request_to_ai(pipeline_id,log_level)
                 return
     except Exception as exc:
         logger.error("Exception while waiting for deduplication to finish: %s", exc)
