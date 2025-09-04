@@ -15,6 +15,7 @@
     <div class="card-body pb-4">
       <form method="post">
         {% csrf_token %}
+        {{ form.selection_signature }}
 
         {# Project select #}
         <div class="mb-3 row">
@@ -162,6 +163,52 @@
     updateVersionRow();
     updateLanguageCheckboxes();
   });
+
+  const form = document.querySelector('form[method="post"]');
+  if (!form) return;
+
+  const url = "{% url 'dojo_aist:aist_default_analyzers' %}";
+
+  function getCSRF() {
+    const inp = form.querySelector('input[name=csrfmiddlewaretoken]');
+    return inp ? inp.value : '';
+  }
+
+  function collectAndRefresh() {
+    const fd = new FormData();
+    fd.append("project", form.querySelector('select[name="{{ form.project.html_name }}"]').value || "");
+    fd.append("time_class_level", form.querySelector('select[name="{{ form.time_class_level.html_name }}"]').value || "");
+    form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
+      if (cb.checked) fd.append("languages", cb.value);
+    });
+
+    fetch(url, {
+      method: "POST",
+      headers: {"X-CSRFToken": getCSRF()},
+      body: fd
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(data => {
+
+      const sig = form.querySelector('input[name="{{ form.selection_signature.html_name }}"]');
+      if (sig && data.signature) sig.value = data.signature;
+
+
+      const wanted = new Set(data.defaults || []);
+      form.querySelectorAll('input[name="{{ form.analyzers.html_name }}"]').forEach(cb => {
+        cb.checked = wanted.has(cb.value);
+      });
+    })
+    .catch(() => {});
+  }
+
+  const projSel = form.querySelector('select[name="{{ form.project.html_name }}"]');
+  const timeSel = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
+  const langCbs = form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
+
+  projSel && projSel.addEventListener('change', collectAndRefresh);
+  timeSel && timeSel.addEventListener('change', collectAndRefresh);
+  langCbs.forEach(cb => cb.addEventListener('change', collectAndRefresh));
 })();
 </script>
 {% endblock %}

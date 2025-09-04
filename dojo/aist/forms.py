@@ -2,6 +2,7 @@ from __future__ import annotations
 from django import forms
 from django.conf import settings
 from .models import AISTProject
+import json
 
 def _load_analyzers_config():
     import importlib, sys, os
@@ -14,6 +15,9 @@ def _load_analyzers_config():
         except Exception:
             return None
     return None
+
+def _signature(project_id: str|None, langs: list[str], time_class: str|None) -> str:
+    return f"{project_id or ''}::{time_class or 'slow'}::{','.join(sorted(set(langs or [])))}"
 
 class AISTPipelineRunForm(forms.Form):
     project = forms.ModelChoiceField(
@@ -29,8 +33,9 @@ class AISTPipelineRunForm(forms.Form):
         label="Log level",
     )
     languages = forms.MultipleChoiceField(choices=[], required=False, label="Languages", widget=forms.CheckboxSelectMultiple)
-    analyzers = forms.MultipleChoiceField(choices=[], required=False, label="Specific analyzers to launch", widget=forms.CheckboxSelectMultiple)
-    time_class_level = forms.ChoiceField(choices=[], required=False, label="Analyzers time class")
+    analyzers = forms.MultipleChoiceField(choices=[], required=False, label="Analyzers to launch", widget=forms.CheckboxSelectMultiple)
+    time_class_level = forms.ChoiceField(choices=[], required=False, label="Maximum time class", initial="medium")
+    selection_signature = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -49,6 +54,45 @@ class AISTPipelineRunForm(forms.Form):
             self.fields["languages"].choices = [(x, x) for x in cfg.get_supported_languages()]
             self.fields["analyzers"].choices = [(x, x) for x in cfg.get_supported_analyzers()]
             self.fields["time_class_level"].choices = [(x, x) for x in cfg.get_analyzers_time_class()]
+        if not self.is_bound:
+            return
+        project_id = self.data.get(self.add_prefix("project")) or None
+        proj = None
+        if project_id:
+            try:
+                proj = AISTProject.objects.get(id=project_id)
+            except AISTProject.DoesNotExist:
+                pass
+
+        posted_langs = self.data.getlist(self.add_prefix("languages"))
+        project_supported_languages = (proj.supported_languages if proj else []) or []
+        langs_union = list(set((posted_langs or []) + project_supported_languages))
+
+        time_class = self.data.get(self.add_prefix("time_class_level")) or "slow"
+
+        posted_sig = self.data.get(self.add_prefix("selection_signature")) or ""
+        new_sig = _signature(project_id, langs_union, time_class)
+        self.initial["selection_signature"] = new_sig
+
+        defaults = []
+        if cfg:
+            non_compile_project = not proj.compilable
+            filtered = cfg.get_filtered_analyzers(
+                analyzers_to_run=None,
+                max_time_class=time_class,
+                non_compile_project=non_compile_project,
+                target_languages=langs_union,
+                show_only_parent=True
+            )
+            defaults = cfg.get_names(filtered)
+
+        if posted_sig != new_sig:
+            qd = self.data.copy()
+            qd.setlist(self.add_prefix("analyzers"), defaults)
+            self.data = qd
+            self.initial["analyzers"] = defaults
+        else:
+            self.initial["analyzers"] = self.data.getlist(self.add_prefix("analyzers")) or defaults
 
     def get_params(self) -> dict:
         """Collect final CLI/runner parameters from the selected SASTProject and form options."""

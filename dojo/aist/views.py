@@ -18,13 +18,51 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse, HttpResponseBadRequest
 from .tasks import run_sast_pipeline
-from .forms import AISTPipelineRunForm  # type: ignore
+from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 from .tasks import _install_db_logging
 
 from .models import AISTPipeline, AISTStatus
 from .utils import DatabaseLogHandler, stop_pipeline
 from .auth import CallbackTokenAuthentication
+import time
+from django.http import StreamingHttpResponse, Http404
+from django.db import close_old_connections
+from django.utils.timezone import now
+
+from .models import AISTPipeline, AISTStatus, AISTProject
+
+
+
+@require_POST
+def aist_default_analyzers(request):
+    project_id = request.POST.get("project")
+    time_class = request.POST.get("time_class_level") or "slow"
+    langs = request.POST.getlist("languages") or request.POST.getlist("languages[]")
+
+    proj = AISTProject.objects.filter(id=project_id).first()
+    proj_langs = (proj.supported_languages if proj else []) or []
+    langs_union = list(set((langs or []) + proj_langs))
+
+    cfg = _load_analyzers_config()
+    if not cfg:
+      return HttpResponseBadRequest("config not loaded")
+
+    filtered = cfg.get_filtered_analyzers(
+        analyzers_to_run=None,
+        max_time_class=time_class,
+        non_compile_project=bool(proj and not proj.compilable),
+        target_languages=langs_union,
+        show_only_parent=True
+    )
+    defaults = cfg.get_names(filtered)
+
+    return JsonResponse({
+        "defaults": defaults,
+        "signature": _signature(project_id, langs_union, time_class),
+    })
 
 @api_view(["POST"])
 @authentication_classes([CallbackTokenAuthentication])
@@ -52,13 +90,6 @@ def pipeline_callback(request, id: int):
         pipeline.save(update_fields=["status", "response_from_ai", "updated"])
 
     return Response({"ok": True})
-
-import time
-from django.http import StreamingHttpResponse, Http404
-from django.db import close_old_connections
-from django.utils.timezone import now
-
-from .models import AISTPipeline, AISTStatus  # подкорректируй импорт под свой модуль
 
 def pipeline_status_stream(request, id: str):
     """
