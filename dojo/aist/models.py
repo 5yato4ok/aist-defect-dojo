@@ -19,6 +19,7 @@ class AISTProject(models.Model):
     script_path = models.CharField(max_length=1024)
     project_version = models.CharField(max_length=255, null=True, blank=True)
     output_dir = models.CharField(max_length=1024, default="/tmp/aist-output")
+    compilable = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         return self.product.name

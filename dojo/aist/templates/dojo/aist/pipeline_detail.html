@@ -1,4 +1,12 @@
 {% extends "base.html" %}
+{% block breadcrumbs %}
+  <li class="breadcrumb-item">
+    <a href="{% url 'dojo_aist:start_pipeline' %}">AIST Pipelines</a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">
+    Pipeline {{ pipeline.id }}
+  </li>
+{% endblock %}
 {% block content %}
 <h2 class="mb-2">AIST Pipeline: {{ pipeline.id }}</h2>
 <p class="mb-2"><strong>Status:</strong> <span id="pl-status">{{ pipeline.status }}</span></p>
@@ -13,13 +21,7 @@
 <hr/>
 
 {# --- Status specific UI --- #}
-{% if pipeline.status == "WAITING_DEDUPLICATION_TO_FINISH" %}
-  {% include "dojo/aist/_status_waiting_dedup.html" %}
-{% elif pipeline.status == "WAITING_RESULT_FROM_AI" %}
-  {% include "dojo/aist/_status_waiting_ai.html" %}
-{% elif pipeline.status == "FINISHED" %}
-  {% include "dojo/aist/_status_finished.html" %}
-{% endif %}
+{% include "dojo/aist/_pipeline_status_container.html" %}
 
 
 {# --- Logs (collapsible) --- #}
@@ -114,6 +116,37 @@
     localStorage.setItem(LS_KEY, '0');
     setBtnState(false);
   });
+
+  // Update pipeline.state
+  const container = document.getElementById("pipeline-status-container");
+
+  const srcStatus = new EventSource("{% url 'dojo_aist:pipeline_status_stream' pipeline.id %}");
+
+  srcStatus.onmessage = (evt) => {
+    if (st) st.textContent = evt.data;
+  };
+
+  srcStatus.addEventListener("status", (evt) => {
+    fetch(window.location.href, { headers: { "X-Partial": "status" } })
+      .then(r => r.text())
+      .then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const newContainer = doc.getElementById("pipeline-status-container");
+        if (newContainer && container) {
+          container.innerHTML = newContainer.innerHTML;
+        }
+      })
+      .catch(console.warn);
+  });
+
+  srcStatus.addEventListener("done", () => {
+    srcStatus.close();
+  });
+
+  srcStatus.onerror = () => {
+    // Silently, browser will reconect
+  };
 })();
 </script>
 {% endblock %}

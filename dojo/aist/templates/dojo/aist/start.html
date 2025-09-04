@@ -1,4 +1,12 @@
 {% extends 'base.html' %}
+{% block breadcrumbs %}
+  <li class="breadcrumb-item">
+    <a href="{% url 'dojo_aist:start_pipeline' %}">AIST Pipelines</a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">
+    Pipeline {{ pipeline.id }}
+  </li>
+{% endblock %}
 {% load i18n %}
 {% block content %}
 <div class="container mt-3 pb-5">

@@ -27,7 +27,7 @@ from .utils import DatabaseLogHandler, stop_pipeline
 from .auth import CallbackTokenAuthentication
 
 @api_view(["POST"])
-@authentication_classes([CallbackTokenAuthentication])   # эта строка привязывает проверку заголовка
+@authentication_classes([CallbackTokenAuthentication])
 @permission_classes([IsAuthenticated])
 def pipeline_callback(request, id: int):
     try:
@@ -52,6 +52,76 @@ def pipeline_callback(request, id: int):
         pipeline.save(update_fields=["status", "response_from_ai", "updated"])
 
     return Response({"ok": True})
+
+import time
+from django.http import StreamingHttpResponse, Http404
+from django.db import close_old_connections
+from django.utils.timezone import now
+
+from .models import AISTPipeline, AISTStatus  # подкорректируй импорт под свой модуль
+
+def pipeline_status_stream(request, id: str):
+    """
+    SSE endpoint: шлёт событие 'status' при смене статуса пайплайна.
+    Завершается событием 'done' при FINISHED/FAILED/DELETED.
+    """
+    # Быстрая проверка, что объект вообще существует на момент старта
+    if not AISTPipeline.objects.filter(id=id).exists():
+        raise Http404("Pipeline not found")
+
+    def event_stream():
+        last_status = None
+        heartbeat_every = 3  # сек, раз в N секунд шлём keep-alive комментарий
+        last_heartbeat = 0.0
+
+        try:
+            while True:
+                # В стримах важно периодически закрывать/переподключать старые коннекты
+                close_old_connections()
+
+                # Заново читаем объект каждый цикл — не храним «живой» инстанс
+                obj = (
+                    AISTPipeline.objects
+                    .only("id", "status", "updated")
+                    .filter(id=id)
+                    .first()
+                )
+
+                if obj is None:
+                    # Объект удалён — сообщаем клиенту и выходим
+                    yield "event: done\ndata: deleted\n\n"
+                    break
+
+                if obj.status != last_status:
+                    last_status = obj.status
+                    # Правильный блок SSE: сначала event, затем data, затем пустая строка
+                    yield f"event: status\ndata: {last_status}\n\n"
+
+                    if last_status in (
+                        getattr(AISTStatus, "FINISHED", "FINISHED"),
+                        getattr(AISTStatus, "FAILED", "FAILED"),
+                    ):
+                        yield "event: done\ndata: finished\n\n"
+                        break
+
+                # Heartbeat, чтобы прокси (например, Nginx) не закрывали соединение
+                now_ts = time.time()
+                if now_ts - last_heartbeat >= heartbeat_every:
+                    last_heartbeat = now_ts
+                    yield f": heartbeat {int(now_ts)}\n\n"  # комментарий по спецификации SSE
+
+                time.sleep(1)
+
+        except GeneratorExit:
+            # Клиент закрыл соединение — просто выходим, без исключений в логах
+            return
+        finally:
+            close_old_connections()
+
+    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"  # важно для Nginx, чтобы не буферил стрим
+    return resp
 
 
 def start_pipeline(request: HttpRequest) -> HttpResponse:
@@ -103,6 +173,9 @@ def pipeline_detail(request, id: str):
     Adds actions (Stop/Delete) and connects SSE client to stream logs.
     """
     pipeline = get_object_or_404(AISTPipeline, id=id)
+    if request.headers.get("X-Partial") == "status":
+        return render(request, "dojo/aist/_pipeline_status_container.html", {"pipeline": pipeline})
+
     return render(request, "dojo/aist/pipeline_detail.html", {"pipeline": pipeline})
 
 

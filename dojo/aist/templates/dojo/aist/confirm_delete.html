@@ -1,4 +1,12 @@
 {% extends "base.html" %}
+{% block breadcrumbs %}
+  <li class="breadcrumb-item">
+    <a href="{% url 'dojo_aist:start_pipeline' %}">AIST Pipelines</a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">
+    Pipeline {{ pipeline.id }}
+  </li>
+{% endblock %}
 {% block content %}
 <h3>Delete AIST Pipeline {{ pipeline.id }}?</h3>
 <p>This action cannot be undone.</p>

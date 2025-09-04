@@ -155,9 +155,9 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         if not os.path.isfile(dockerfile_path):
             raise RuntimeError("Dockerfile does not exist")
 
-        results_path = getattr(settings, "AIST_RESULTS_DIR", None)
-        if not results_path or not os.path.isdir(results_path):
-            raise RuntimeError("Results path for AIST is not setup")
+        project_build_path = getattr(settings, "AIST_PROJECTS_BUILD_DIR", None)
+        if not project_build_path:
+            raise RuntimeError("Project build path for AIST is not setup")
 
         logger.info("Starting configure_project_run_analyses")
         launch_data = configure_project_run_analyses(
@@ -168,7 +168,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             dockerfile_path=dockerfile_path,
             context_dir=pipeline_path,
             image_name=f"project-{dojo_product_name}-builder" if dojo_product_name else "project-builder",
-            project_path=results_path,
+            project_path=project_build_path,
             force_rebuild=False,
             rebuild_images=rebuild_images,
             version=project_version,
@@ -187,7 +187,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         logger.info("Upload step starting")
 
         dojo_cfg_path = os.path.join(pipeline_path, "pipeline", "config", "defectdojo.yaml")
-        repo_path = (launch_data or {}).get("project_path", results_path)
+        repo_path = (launch_data or {}).get("project_path", project_build_path)
         trim_path = (launch_data or {}).get("trim_path", "")
 
         results = upload_results( #TODO: change to usage defect dojo classes
@@ -214,7 +214,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
 
-            res = watch_deduplication.apply_async(args=[pipeline_id, log_level, params], countdown=5)
+            res = watch_deduplication.apply_async(args=[pipeline_id, log_level, params])
             pipeline.watch_dedup_task_id = res.id
             pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
@@ -255,40 +255,40 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
     triage_secret = getattr(settings, "AIST_AI_TRIAGE_SECRET", None)
 
     with transaction.atomic():
-        pipeline = (
-            AISTPipeline.objects
-            .select_for_update()
-            .select_related("project__product")
-            .get(id=pipeline_id)
-        )
-
-        project = pipeline.project
-        product = getattr(project, "product", None)
-        project_name = getattr(product, "name", None) or getattr(project, "project_name", "")
-
-        launch_data = pipeline.launch_data or {}
-        languages = _csv(launch_data.get("languages") or [])
-        tools = _csv(launch_data.get("launched_analyzers") or [])
-        callback_url = build_callback_url(pipeline_id)
-
-        payload: Dict[str, Any] = {
-            "project": {
-                "name": project_name,
-                "description": getattr(project, "description", "") or "",
-                "languages": languages,
-                "tools": tools,
-            },
-            "pipeline_id": str(pipeline.id),
-            "callback_url": callback_url,
-        }
         try:
+            pipeline = (
+                AISTPipeline.objects
+                .select_for_update()
+                .select_related("project__product")
+                .get(id=pipeline_id)
+            )
+
+            project = pipeline.project
+            product = getattr(project, "product", None)
+            project_name = getattr(product, "name", None) or getattr(project, "project_name", "")
+
+            launch_data = pipeline.launch_data or {}
+            languages = _csv(launch_data.get("languages") or [])
+            tools = _csv(launch_data.get("launched_analyzers") or [])
+            callback_url = build_callback_url(pipeline_id)
+
+            payload: Dict[str, Any] = {
+                "project": {
+                    "name": project_name,
+                    "description": getattr(project, "description", "") or "",
+                    "languages": languages,
+                    "tools": tools,
+                },
+                "pipeline_id": str(pipeline.id),
+                "callback_url": callback_url,
+            }
             headers = {"Content-Type": "application/json"}
             body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             if triage_secret:
                 headers["X-AIST-Signature"] = triage_secret
             log.info("Sending AI triage request: url=%s payload=%s", webhook_url, payload)
-            resp = requests.post(webhook_url, data=body_bytes, headers=headers, timeout=webhook_timeout)
-            resp.raise_for_status()
+            #resp = requests.post(webhook_url, data=body_bytes, headers=headers, timeout=webhook_timeout)
+            #resp.raise_for_status()
         except requests.RequestException as exc:
             log.error("AI triage POST failed: %s", exc, exc_info=True)
             pipeline.status = AISTStatus.FINISHED
@@ -298,8 +298,7 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
         pipeline.status = AISTStatus.WAITING_RESULT_FROM_AI
         pipeline.save(update_fields=["status", "updated"])
 
-        log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
-
+        #log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
 
 
 
