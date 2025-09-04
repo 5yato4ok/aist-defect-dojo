@@ -1,7 +1,7 @@
 from __future__ import annotations
 from django.db import models
 from django.utils import timezone
-from dojo.models import Test
+from dojo.models import Test, Product
 
 class AISTStatus(models.TextChoices):
     SAST_LAUNCHED = "SAST_LAUNCHED", "Launched"
@@ -15,7 +15,7 @@ class AISTProject(models.Model):
     created = models.DateTimeField(default=timezone.now, editable=False)
     updated = models.DateTimeField(auto_now=True)
 
-    project_name = models.CharField(max_length=255, unique=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
     supported_languages = models.JSONField(default=list, blank=True)
     script_path = models.CharField(max_length=1024)
     project_path = models.CharField(max_length=1024)
@@ -23,7 +23,7 @@ class AISTProject(models.Model):
     output_dir = models.CharField(max_length=1024, default="/tmp/aist-output")
 
     def __str__(self) -> str:
-        return self.project_name
+        return self.product.name
 
 
 class AISTPipeline(models.Model):
@@ -43,6 +43,8 @@ class AISTPipeline(models.Model):
     # Optional: Celery task ids to enable STOP action
     run_task_id = models.CharField(max_length=64, null=True, blank=True)
     watch_dedup_task_id = models.CharField(max_length=64, null=True, blank=True)
+
+    response_from_ai = models.TextField(default="", blank=True)
 
     class Meta:
         ordering = ("-created",)

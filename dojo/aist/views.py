@@ -14,11 +14,38 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from dojo.deduplication_tracker import TestDeduplicationProgress
 from django.db.models import Count
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
 from .tasks import run_sast_pipeline
 from .forms import AISTPipelineRunForm  # type: ignore
 
 from .models import AISTPipeline, AISTStatus
 from .utils import DatabaseLogHandler, stop_pipeline
+from .auth import CallbackTokenAuthentication
+
+@api_view(["POST"])
+@authentication_classes([CallbackTokenAuthentication])   # эта строка привязывает проверку заголовка
+@permission_classes([IsAuthenticated])
+def pipeline_callback(request, id: int):
+    # show response in form
+    # save it to db
+    # set status of pipeline as finished
+    pass
+    status_value = request.data.get("status")
+    if not status_value:
+        return Response({"error": "Missing status"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        p = AISTPipeline.objects.get(id=id)
+    except AISTPipeline.DoesNotExist:
+        return Response({"error": "Pipeline not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    p.status = status_value
+    p.save(update_fields=["status", "updated"])
+    return Response({"ok": True, "pipeline_id": id, "new_status": status_value})
+
 
 def start_pipeline(request: HttpRequest) -> HttpResponse:
     """Launch a new SAST pipeline or redirect to the active one.

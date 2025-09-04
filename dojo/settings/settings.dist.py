@@ -1996,3 +1996,13 @@ AIST_PIPELINE_CODE_PATH = env(
     "AIST_PIPELINE_CODE_PATH",
     default=str(Path(__file__).resolve().parent.parent.parent / "sast-combinator" / "tools" / "sast-pipeline")
 )
+
+CALLBACK_SECRET = "super_secret_token"
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "dojo.aist.auth.CallbackTokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}

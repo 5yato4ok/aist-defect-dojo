@@ -55,7 +55,7 @@ class AISTPipelineRunForm(forms.Form):
         proj: AISTProject = self.cleaned_data["project"]
         return dict(
             # from project model (immutable in the form)
-            project_name=proj.project_name,
+            project_name=proj.product.name,
             script_path=proj.script_path,
             project_path=proj.project_path,
             project_version=proj.project_version,

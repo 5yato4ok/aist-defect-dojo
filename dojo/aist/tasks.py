@@ -109,7 +109,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
 
             project = pipeline.project
-            project_name = project.project_name if project else None
+            project_name = project.product.name if project else None
             project_version = project.project_version if project else None
             project_path_default = project.project_path if project else None #TODO: remove
             project_supported_languages = project.supported_languages if project else []
@@ -203,7 +203,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
 
-            res = watch_deduplication.apply_async(args=[pipeline_id, log_level], countdown=5)
+            res = watch_deduplication.apply_async(args=[pipeline_id, log_level, params], countdown=5)
             pipeline.watch_dedup_task_id = res.id
             pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
@@ -220,8 +220,30 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         raise
 
 
+
+def send_request_to_ai(self, pipeline_id: str, log_level, params) -> None:
+    pipeline = AISTPipeline.objects.get(id=pipeline_id)
+    project = pipeline.project
+    project_name = project.product.name
+
+
+    # post https://flaming.app.n8n.cloud/webhook-test/triage-sast
+    # {
+    #   "project": {
+    #     "name": "vulpy",
+    #     "description": "...",
+    #     "languages": "Python, CSS, HTML",
+    #     "tools": "Semgrep","Snyk"
+    #   },
+    #   "pipeline_id"
+    #   "callback_url": "https://client.example.com/api/triage-callback"
+    # }
+    # https://your-defectdojo-instance/dojo/aist/callback/pipeline/123/
+
+
+
 @shared_task(bind=True)
-def watch_deduplication(self, pipeline_id: str, log_level) -> None:
+def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
     """Monitor deduplication progress and finalise the pipeline.
 
     This task polls the ``Test`` model to determine when all imported
