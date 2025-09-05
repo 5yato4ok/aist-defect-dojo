@@ -20,6 +20,7 @@ from django.contrib.sites.models import Site
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest
 from django.urls import reverse
+from urllib.parse import urlencode
 
 
 class DatabaseLogHandler(logging.Handler):
@@ -42,6 +43,20 @@ class DatabaseLogHandler(logging.Handler):
         except Exception:
             # Never break the main flow due to logging issues
             pass
+
+def _fmt_duration(start, end):
+    if not start or not end:
+        return None
+    total = int((end - start).total_seconds())
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def _qs_without(request, *keys):
+    params = request.GET.copy()
+    for k in keys:
+        params.pop(k, None)
+    return urlencode(params, doseq=True)
 
 def _revoke_task(task_id: Optional[str], terminate: bool = True) -> None:
     """Safely revoke a Celery task by its ID if it is still running."""

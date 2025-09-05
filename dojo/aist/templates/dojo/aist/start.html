@@ -1,214 +1,309 @@
 {% extends 'base.html' %}
 {% block breadcrumbs %}
-  <li class="breadcrumb-item">
-    <a href="{% url 'dojo_aist:start_pipeline' %}">AIST Pipelines</a>
-  </li>
-  <li class="breadcrumb-item active" aria-current="page">
-    Pipeline {{ pipeline.id }}
-  </li>
+    <li class="breadcrumb-item">
+        <a href="{% url 'dojo_aist:start_pipeline' %}">AIST Pipelines</a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">
+        Pipeline {{ pipeline.id }}
+    </li>
 {% endblock %}
 {% load i18n %}
 {% block content %}
-<div class="container mt-3 pb-5">
-  <h3 class="mb-3">Run SAST Pipeline</h3>
-  <div class="card shadow-sm mb-5">
-    <div class="card-body pb-4">
-      <form method="post">
-        {% csrf_token %}
-        {{ form.selection_signature }}
 
-        {# Project select #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.project.label }}</label>
-          <div class="col-sm-9">
-            {{ form.project }}
-            {% if form.project.help_text %}
-              <small class="form-text text-muted small">{{ form.project.help_text }}</small>
-            {% endif %}
-          </div>
-        </div>
+    <div class="container mt-3 pb-5">
+        <div class="row g-4">
 
-        {# Project version (from project) — hidden if version is empty #}
-        <div class="mb-3 row" id="projVersionRow" style="display:none;">
-          <label class="col-sm-3 col-form-label">Project version (from project)</label>
-          <div class="col-sm-9">
-            <input type="text" class="form-control" id="projVersion" readonly>
-          </div>
-        </div>
+            <!-- Left panel: Start form -->
+            <div class="col-12 col-lg-8">
+                <h3 class="mb-3">Run SAST Pipeline</h3>
+                <div class="card shadow-sm mb-5">
+                    <div class="card-body pb-4">
+                        <form method="post">
+                            {% csrf_token %}
+                            {{ form.selection_signature }}
 
-        {# Rebuild images (checkbox) — aligned like other fields #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
-          <div class="col-sm-9">
-            <div class="form-check">
-              {{ form.rebuild_images }}
-            </div>
-          </div>
-        </div>
+                            {# Project select #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.project.label }}</label>
+                                <div class="col-sm-9">
+                                    {{ form.project }}
+                                    {% if form.project.help_text %}
+                                        <small class="form-text text-muted small">{{ form.project.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
 
-        {# Log level #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.log_level.label }}</label>
-          <div class="col-sm-9">
-            {{ form.log_level }}
-          </div>
-        </div>
+                            {# Project version (from project) — hidden if version is empty #}
+                            <div class="mb-3 row" id="projVersionRow" style="display:none;">
+                                <label class="col-sm-3 col-form-label">Project version (from project)</label>
+                                <div class="col-sm-9">
+                                    <input type="text" class="form-control" id="projVersion" readonly>
+                                </div>
+                            </div>
 
-        {# Languages as checkboxes #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.languages.label }}</label>
-          <div class="col-sm-9" id="languages-group">
-            <div class="row">
-              {% for checkbox in form.languages %}
-                <div class="col-sm-6 col-lg-4">
-                  <div class="form-check mb-2">
-                    {{ checkbox.tag }}
-                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
-                  </div>
+                            {# Rebuild images (checkbox) — aligned like other fields #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
+                                <div class="col-sm-9">
+                                    <div class="form-check">
+                                        {{ form.rebuild_images }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {# Log level #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.log_level.label }}</label>
+                                <div class="col-sm-9">
+                                    {{ form.log_level }}
+                                </div>
+                            </div>
+
+                            {# Languages as checkboxes #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.languages.label }}</label>
+                                <div class="col-sm-9" id="languages-group">
+                                    <div class="row">
+                                        {% for checkbox in form.languages %}
+                                            <div class="col-sm-6 col-lg-4">
+                                                <div class="form-check mb-2">
+                                                    {{ checkbox.tag }}
+                                                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                    <small class="form-text text-muted small mt-1">
+                                        Project-required languages are preselected and disabled.
+                                    </small>
+                                </div>
+                            </div>
+
+                            {# Analyzers as checkboxes #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.analyzers.label }}</label>
+                                <div class="col-sm-9">
+                                    <div class="row">
+                                        {% for checkbox in form.analyzers %}
+                                            <div class="col-sm-6 col-lg-4">
+                                                <div class="form-check mb-2">
+                                                    {{ checkbox.tag }}
+                                                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {# Time class #}
+                            <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.time_class_level.label }}</label>
+                                <div class="col-sm-9">
+                                    {{ form.time_class_level }}
+                                </div>
+                            </div>
+
+                            <div class="text-end mt-3">
+                                <button type="submit" class="btn btn-primary">Start</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-              {% endfor %}
-            </div>
-            <small class="form-text text-muted small mt-1">
-              Project-required languages are preselected and disabled.
-            </small>
-          </div>
-        </div>
 
-        {# Analyzers as checkboxes #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.analyzers.label }}</label>
-          <div class="col-sm-9">
-            <div class="row">
-              {% for checkbox in form.analyzers %}
-                <div class="col-sm-6 col-lg-4">
-                  <div class="form-check mb-2">
-                    {{ checkbox.tag }}
-                    <label class="form-check-label">{{ checkbox.choice_label }}</label>
-                  </div>
+                {# hard spacer to guarantee bottom gap across themes #}
+                <div class="mb-5"></div>
+                <div style="height:48px"></div>
+            </div>
+
+            <!-- Right column: launch history -->
+            <div class="col-12 col-lg-4">
+                <div class="card shadow-sm sticky-lg-top" style="top: 76px;">
+                    <div class="card-header d-flex align-items-center justify-content-between py-2 mb-2" style="margin-bottom:.5rem!important">
+                        <span class="fw-semibold">Recent pipelines</span>
+                        <span class="badge bg-secondary">{{ history_page.paginator.count }}</span>
+                    </div>
+
+                    <!-- Filter/search (GET) -->
+                    <form method="get" class="mt-2 px-3 pb-0">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Project</label>
+                            <select class="form-select form-select-sm" name="project" onchange="this.form.submit()">
+                                <option value="">All projects</option>
+                                {% for p in form.fields.project.queryset %}
+                                    <option value="{{ p.id }}"
+                                            {% if selected_project|stringformat:"s" == p.id|stringformat:"s" %}selected{% endif %}>
+                                        {{ p.product.name }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Search</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" name="q" value="{{ search_query }}"
+                                       placeholder="ID or product name">
+                                <button class="btn btn-outline-secondary btn-sm" type="submit">Apply</button>
+                                <a class="btn btn-outline-light btn-sm border"
+                                   href="{% url 'dojo_aist:start_pipeline' %}">Reset</a>
+                            </div>
+                        </div>
+                        <input type="hidden" name="page_size" value="8">
+                    </form>
+
+                    {% if history_items %}
+                        <div class="list-group list-group-flush mt-2">
+                            {% for run in history_items %}
+                                <a href="{% url 'dojo_aist:pipeline_detail' id=run.id %}"
+                                   class="list-group-item list-group-item-action">
+                                    <div class="d-flex justify-content-between">
+                                        <div class="me-2">
+                                            <div class="fw-semibold text-truncate"
+                                                 title="{{ run.project_name }}">{{ run.project_name }}</div>
+                                            <div class="text-muted small">#{{ run.id }}
+                                                · {{ run.updated|date:"Y-m-d H:i" }}</div>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="badge bg-success">{{ run.status }}</span>
+                                            {% if run.duration %}
+                                                <div class="small mt-1">⏱ {{ run.duration }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </a>
+                            {% endfor %}
+                        </div>
+
+                        <div class="card-footer d-flex align-items-center justify-content-between">
+                            <div class="btn-group">
+                                {% if history_page.has_previous %}
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       href="?{{ history_qs }}&page={{ history_page.previous_page_number }}">‹ Prev</a>
+                                {% else %}
+                                    <button class="btn btn-sm btn-outline-secondary" disabled>‹ Prev</button>
+                                {% endif %}
+                                {% if history_page.has_next %}
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       href="?{{ history_qs }}&page={{ history_page.next_page_number }}">Next ›</a>
+                                {% else %}
+                                    <button class="btn btn-sm btn-outline-secondary" disabled>Next ›</button>
+                                {% endif %}
+                            </div>
+                            <div class="small text-muted">Page {{ history_page.number }}
+                                / {{ history_page.paginator.num_pages }}</div>
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="{% url 'dojo_aist:pipeline_list' %}?{{ history_qs }}">View all</a>
+                        </div>
+                    {% else %}
+                        <div class="card-body text-muted">No finished runs yet.</div>
+                    {% endif %}
                 </div>
-              {% endfor %}
             </div>
-          </div>
-        </div>
 
-        {# Time class #}
-        <div class="mb-3 row">
-          <label class="col-sm-3 col-form-label">{{ form.time_class_level.label }}</label>
-          <div class="col-sm-9">
-            {{ form.time_class_level }}
-          </div>
-        </div>
 
-        <div class="text-end mt-3">
-          <button type="submit" class="btn btn-primary">Start</button>
         </div>
-      </form>
     </div>
-  </div>
 
-  {# hard spacer to guarantee bottom gap across themes #}
-  <div class="mb-5"></div>
-</div>
-    <div style="height:48px"></div>
+    {# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
+    <script>
+        (function () {
+            const PROJECTS = {
+                {% for p in form.fields.project.queryset %}
+                    "{{ p.id }}": {
+                        supported_languages: {{ p.supported_languages|safe }},
+                        version: {{ p.project_version|default:"null"|safe }}
+                    }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            };
 
-{# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
-<script>
-(function () {
-  const PROJECTS = {
-    {% for p in form.fields.project.queryset %}
-      "{{ p.id }}": {
-        supported_languages: {{ p.supported_languages|safe }},
-        version: {{ p.project_version|default:"null"|safe }}
-      }{% if not forloop.last %},{% endif %}
-    {% endfor %}
-  };
+            const select = document.querySelector('select[name="{{ form.project.html_name }}"]');
+            const langsWrap = document.getElementById('languages-group');
+            const verRow = document.getElementById('projVersionRow');
+            const verInput = document.getElementById('projVersion');
 
-  const select    = document.querySelector('select[name="{{ form.project.html_name }}"]');
-  const langsWrap = document.getElementById('languages-group');
-  const verRow    = document.getElementById('projVersionRow');
-  const verInput  = document.getElementById('projVersion');
+            function updateVersionRow() {
+                const id = select?.value;
+                const data = PROJECTS[id];
+                if (!data) {
+                    if (verRow) verRow.style.display = "none";
+                    return;
+                }
+                const hasVersion = (data.version !== null && data.version !== undefined && String(data.version).trim() !== "");
+                if (verInput) verInput.value = hasVersion ? String(data.version) : "";
+                if (verRow) verRow.style.display = hasVersion ? "" : "none";
+            }
 
-  function updateVersionRow() {
-    const id   = select?.value;
-    const data = PROJECTS[id];
-    if (!data) { if (verRow) verRow.style.display = "none"; return; }
-    const hasVersion = (data.version !== null && data.version !== undefined && String(data.version).trim() !== "");
-    if (verInput) verInput.value = hasVersion ? String(data.version) : "";
-    if (verRow) verRow.style.display = hasVersion ? "" : "none";
-  }
+            function updateLanguageCheckboxes() {
+                if (!langsWrap || !select) return;
+                const data = PROJECTS[select.value] || {supported_languages: []};
+                const fixed = new Set(Array.isArray(data.supported_languages) ? data.supported_languages : []);
+                const boxes = langsWrap.querySelectorAll('input[type="checkbox"][name="{{ form.languages.html_name }}"]');
+                boxes.forEach(cb => {
+                    const isFixed = fixed.has(cb.value);
+                    if (isFixed) {
+                        cb.checked = true;
+                        cb.disabled = true;
+                        cb.classList.add('form-check-input');
+                        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.add('text-muted');
+                    } else {
+                        cb.disabled = false;
+                        cb.classList.add('form-check-input');
+                        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.remove('text-muted');
+                    }
+                });
+            }
 
-  function updateLanguageCheckboxes() {
-    if (!langsWrap || !select) return;
-    const data  = PROJECTS[select.value] || { supported_languages: [] };
-    const fixed = new Set(Array.isArray(data.supported_languages) ? data.supported_languages : []);
-    const boxes = langsWrap.querySelectorAll('input[type="checkbox"][name="{{ form.languages.html_name }}"]');
-    boxes.forEach(cb => {
-      const isFixed = fixed.has(cb.value);
-      if (isFixed) {
-        cb.checked  = true;
-        cb.disabled = true;
-        cb.classList.add('form-check-input');
-        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.add('text-muted');
-      } else {
-        cb.disabled = false;
-        cb.classList.add('form-check-input');
-        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.remove('text-muted');
-      }
-    });
-  }
+            updateVersionRow();
+            updateLanguageCheckboxes();
+            select?.addEventListener('change', () => {
+                updateVersionRow();
+                updateLanguageCheckboxes();
+            });
 
-  updateVersionRow();
-  updateLanguageCheckboxes();
-  select?.addEventListener('change', () => {
-    updateVersionRow();
-    updateLanguageCheckboxes();
-  });
+            const form = document.querySelector('form[method="post"]');
+            if (!form) return;
 
-  const form = document.querySelector('form[method="post"]');
-  if (!form) return;
+            const url = "{% url 'dojo_aist:aist_default_analyzers' %}";
 
-  const url = "{% url 'dojo_aist:aist_default_analyzers' %}";
+            function getCSRF() {
+                const inp = form.querySelector('input[name=csrfmiddlewaretoken]');
+                return inp ? inp.value : '';
+            }
 
-  function getCSRF() {
-    const inp = form.querySelector('input[name=csrfmiddlewaretoken]');
-    return inp ? inp.value : '';
-  }
+            function collectAndRefresh() {
+                const fd = new FormData();
+                fd.append("project", form.querySelector('select[name="{{ form.project.html_name }}"]').value || "");
+                fd.append("time_class_level", form.querySelector('select[name="{{ form.time_class_level.html_name }}"]').value || "");
+                form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
+                    if (cb.checked) fd.append("languages", cb.value);
+                });
 
-  function collectAndRefresh() {
-    const fd = new FormData();
-    fd.append("project", form.querySelector('select[name="{{ form.project.html_name }}"]').value || "");
-    fd.append("time_class_level", form.querySelector('select[name="{{ form.time_class_level.html_name }}"]').value || "");
-    form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
-      if (cb.checked) fd.append("languages", cb.value);
-    });
+                fetch(url, {
+                    method: "POST",
+                    headers: {"X-CSRFToken": getCSRF()},
+                    body: fd
+                })
+                    .then(r => r.ok ? r.json() : Promise.reject(r))
+                    .then(data => {
+                        const sig = form.querySelector('input[name="{{ form.selection_signature.html_name }}"]');
+                        if (sig && data.signature) sig.value = data.signature;
 
-    fetch(url, {
-      method: "POST",
-      headers: {"X-CSRFToken": getCSRF()},
-      body: fd
-    })
-    .then(r => r.ok ? r.json() : Promise.reject(r))
-    .then(data => {
+                        const wanted = new Set(data.defaults || []);
+                        form.querySelectorAll('input[name="{{ form.analyzers.html_name }}"]').forEach(cb => {
+                            cb.checked = wanted.has(cb.value);
+                        });
+                    })
+                    .catch(() => {
+                    });
+            }
 
-      const sig = form.querySelector('input[name="{{ form.selection_signature.html_name }}"]');
-      if (sig && data.signature) sig.value = data.signature;
+            const projSel = form.querySelector('select[name="{{ form.project.html_name }}"]');
+            const timeSel = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
+            const langCbs = form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
 
-
-      const wanted = new Set(data.defaults || []);
-      form.querySelectorAll('input[name="{{ form.analyzers.html_name }}"]').forEach(cb => {
-        cb.checked = wanted.has(cb.value);
-      });
-    })
-    .catch(() => {});
-  }
-
-  const projSel = form.querySelector('select[name="{{ form.project.html_name }}"]');
-  const timeSel = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
-  const langCbs = form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
-
-  projSel && projSel.addEventListener('change', collectAndRefresh);
-  timeSel && timeSel.addEventListener('change', collectAndRefresh);
-  langCbs.forEach(cb => cb.addEventListener('change', collectAndRefresh));
-})();
-</script>
+            projSel && projSel.addEventListener('change', collectAndRefresh);
+            timeSel && timeSel.addEventListener('change', collectAndRefresh);
+            langCbs.forEach(cb => cb.addEventListener('change', collectAndRefresh));
+        })();
+    </script>
 {% endblock %}

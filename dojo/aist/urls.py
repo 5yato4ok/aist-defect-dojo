@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import pipeline_detail, stop_pipeline_view, delete_pipeline_view, stream_logs_sse, start_pipeline, \
-    pipeline_progress_json, pipeline_callback, pipeline_status_stream, aist_default_analyzers
+    pipeline_progress_json, pipeline_callback, pipeline_status_stream, aist_default_analyzers,pipeline_list
 
 app_name = "dojo_aist"
 urlpatterns = [
@@ -13,4 +13,5 @@ urlpatterns = [
     path("pipelines/<str:id>/callback", pipeline_callback, name="pipeline_callback"),
     path("pipeline/<str:id>/status/stream/", pipeline_status_stream, name="pipeline_status_stream"),
     path("aist/default-analyzers/", aist_default_analyzers, name="aist_default_analyzers"),
+    path("pipelines/", pipeline_list, name="pipeline_list")
 ]
