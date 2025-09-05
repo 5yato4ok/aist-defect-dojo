@@ -3,18 +3,8 @@ from django import forms
 from django.conf import settings
 from .models import AISTProject
 import json
+from .utils import _load_analyzers_config
 
-def _load_analyzers_config():
-    import importlib, sys, os
-    code_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
-    if code_path and os.path.isdir(code_path):
-        if code_path not in sys.path:
-            sys.path.insert(0, code_path)
-        try:
-            return importlib.import_module("pipeline.config_utils").AnalyzersConfigHelper()
-        except Exception:
-            return None
-    return None
 
 def _signature(project_id: str|None, langs: list[str], time_class: str|None) -> str:
     return f"{project_id or ''}::{time_class or 'slow'}::{','.join(sorted(set(langs or [])))}"

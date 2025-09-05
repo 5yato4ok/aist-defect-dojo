@@ -9,6 +9,7 @@ from celery.result import AsyncResult
 from .models import AISTPipeline, AISTStatus
 
 import os
+import sys
 import ipaddress
 import socket
 from urllib.parse import urlsplit, urlunsplit
@@ -19,51 +20,24 @@ from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest
+from functools import lru_cache
 from django.urls import reverse
 from urllib.parse import urlencode
 
+def _import_sast_pipeline_package():
+    pipeline_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
+    if not pipeline_path or not os.path.isdir(pipeline_path):
+        raise RuntimeError(
+            "SAST pipeline code path is not configured or does not exist. "
+            "Please set AIST_PIPELINE_CODE_PATH."
+        )
+    if pipeline_path not in sys.path:
+        sys.path.append(pipeline_path)
 
-class DatabaseLogHandler(logging.Handler):
-    """
-    Logging handler that writes log records into the AISTPipeline.logs field.
-
-    This allows anything that logs through Python's logging to be displayed
-    in the pipeline UI in near-real-time via the SSE endpoint.
-    """
-    def __init__(self, pipeline_id: str):
-        super().__init__()
-        self.pipeline_id = pipeline_id
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            msg = self.format(record)
-            with transaction.atomic():
-                p = AISTPipeline.objects.select_for_update().get(id=self.pipeline_id)
-                p.append_log(msg)
-        except Exception:
-            # Never break the main flow due to logging issues
-            pass
-
-def _install_db_logging(pipeline_id: str, level=logging.INFO):
-    """Connect BD -handler for all required loggers ко всем нужным логгерам (root и 'pipeline')."""
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    dbh = DatabaseLogHandler(pipeline_id)
-    dbh.setLevel(level)
-    dbh.setFormatter(fmt)
-
-    plog = logging.getLogger("pipeline")
-    plog.setLevel(level)
-    plog.propagate = True
-    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
-               for h in plog.handlers):
-        plog.addHandler(dbh)
-
-    root = logging.getLogger("dojo.aist.pipeline.{pipeline_id}")
-    root.setLevel(level)
-    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
-               for h in root.handlers):
-        root.addHandler(dbh)
-    return root
+def _load_analyzers_config():
+    _import_sast_pipeline_package()
+    import importlib
+    return importlib.import_module("pipeline.config_utils").AnalyzersConfigHelper()
 
 def _fmt_duration(start, end):
     if not start or not end:

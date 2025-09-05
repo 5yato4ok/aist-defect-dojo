@@ -16,6 +16,7 @@ from pathlib import Path
 
 import environ
 from celery.schedules import crontab
+from kombu import Queue
 from netaddr import IPNetwork, IPSet
 
 from dojo import __version__
@@ -1162,6 +1163,12 @@ if len(env("DD_CELERY_BROKER_TRANSPORT_OPTIONS")) > 0:
 
 CELERY_IMPORTS = ("dojo.tools.tool_issue_updater", )
 
+# CELERY_TASK_DEFAULT_QUEUE = "celery"
+# CELERY_TASK_QUEUES = (
+#     Queue("celery"),
+#     Queue("aist_logs"),
+# )
+
 # Celery beat scheduled tasks
 CELERY_BEAT_SCHEDULE = {
     "add-alerts": {
@@ -1215,6 +1222,11 @@ CELERY_BEAT_SCHEDULE = {
     #     'task': 'dojo.tasks.fix_loop_duplicates_task',
     #     'schedule': timedelta(hours=12)
     # },
+    # "aist-flush-logs": {
+    #     "task": "aist.flush_logs_once",
+    #     "schedule": 0.5,  # each half of second
+    #     "options": {"queue": "aist_logs"},
+    # }
 
 }
 
@@ -1999,8 +2011,10 @@ AIST_PIPELINE_CODE_PATH = env(
 
 AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist-projects")
 
-CALLBACK_SECRET = "super_secret_token"
+#CALLBACK_SECRET = "my_generated_token"
 REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += ("dojo.aist.auth.CallbackTokenAuthentication",)
 REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] += ("rest_framework.permissions.IsAuthenticated",)
 
 LOGIN_EXEMPT_URLS += (r"^aist/pipelines/[^/]+/callback/?$",)
+
+CELERY_TASK_IGNORE_RESULT = False

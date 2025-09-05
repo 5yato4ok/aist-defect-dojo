@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import json
 import uuid
 from typing import Any, Dict
 from django.core.paginator import Paginator
@@ -28,7 +28,8 @@ from .tasks import run_sast_pipeline, send_request_to_ai
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
 
-from .utils import stop_pipeline, _fmt_duration, _qs_without, _install_db_logging
+from .utils import stop_pipeline, _fmt_duration, _qs_without
+from .logging_transport import _install_db_logging
 from .auth import CallbackTokenAuthentication
 import time
 from django.http import StreamingHttpResponse, Http404
@@ -36,6 +37,7 @@ from django.db import close_old_connections
 from django.utils.timezone import now
 
 from .models import AISTPipeline, AISTStatus, AISTProject
+from .logging_transport import get_redis, PUBSUB_CHANNEL_TPL, STREAM_KEY, BACKLOG_COUNT
 
 @require_POST
 def aist_default_analyzers(request):
@@ -68,15 +70,15 @@ def aist_default_analyzers(request):
 @api_view(["POST"])
 @authentication_classes([CallbackTokenAuthentication])
 @permission_classes([IsAuthenticated])
-def pipeline_callback(request, id: int):
+def pipeline_callback(request, id: str):
     try:
-        get_object_or_404(AISTPipeline, id=str(id))
+        get_object_or_404(AISTPipeline, id=id)
         response_from_ai = request.data
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     errors = response_from_ai.pop("errors", None)
-    logger = _install_db_logging(str(id))
+    logger = _install_db_logging(id)
     if errors:
         logger.error(errors)
 
@@ -161,7 +163,7 @@ def push_to_ai(request, id:str):
     if not AISTPipeline.objects.filter(id=id).exists():
         raise Http404("Pipeline not found")
 
-    logger = _install_db_logging(str(id))
+    logger = _install_db_logging(id)
     if request.method == "POST":
 
         with transaction.atomic():
@@ -352,6 +354,7 @@ def delete_pipeline_view(request, id: str):
     return render(request, "dojo/aist/confirm_delete.html", {"pipeline": pipeline})
 
 
+
 @csrf_exempt  # SSE does not need CSRF for GET; keep it simple
 @require_http_methods(["GET"])
 def stream_logs_sse(request, id: str):
@@ -382,6 +385,102 @@ def stream_logs_sse(request, id: str):
     resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream; charset=utf-8")
     resp["Cache-Control"] = "no-cache, no-transform"
     resp["X-Accel-Buffering"] = "no"
+    return resp
+
+
+def _sse_data(payload: str) -> bytes:
+    """Format a single SSE 'message' event."""
+    return f"data: {payload}\n\n".encode("utf-8")
+
+
+def _sse_comment(comment: str) -> bytes:
+    """Format an SSE comment line (useful as heartbeat)."""
+    return f": {comment}\n\n".encode("utf-8")
+
+
+def _stream_last_lines_from_redis_stream(r, pipeline_id: str, limit: int):
+    """
+    Send initial backlog from Redis Stream (last `limit` items) filtered by pipeline_id.
+    Uses XREVRANGE for 'tail'-like behavior then reverses to chronological order.
+    """
+    try:
+        # XREVRANGE stream + - COUNT N  -> newest first
+        entries = r.xrevrange(STREAM_KEY, max="+", min="-", count=limit) or []
+        # reverse to oldest -> newest for nicer UI
+        for entry_id, fields in reversed(entries):
+            pid = (fields or {}).get("pipeline_id")
+            msg = (fields or {}).get("message")
+            lvl = (fields or {}).get("level")
+            if not pid or pid != pipeline_id or not msg:
+                continue
+            line = f"{lvl} {msg}" if lvl else msg
+            yield _sse_data(line)
+    except Exception:
+        # Do not break SSE if Redis is temporarily unavailable
+        return
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def stream_logs_sse_redis_based(request: HttpRequest, id: str) -> HttpResponse:
+    """
+    SSE endpoint for pipeline logs.
+    1) Replays last N lines from Redis Stream for quick backlog.
+    2) Subscribes to Redis Pub/Sub and streams new lines immediately.
+    """
+    # Validate pipeline
+    try:
+        AISTPipeline.objects.only("id").get(id=id)
+    except AISTPipeline.DoesNotExist:
+        raise Http404("Pipeline not found")
+
+    r = get_redis()
+    channel = PUBSUB_CHANNEL_TPL.format(pipeline_id=id)
+
+    def event_stream():
+        # 1) initial backlog from Redis Stream
+        yield from _stream_last_lines_from_redis_stream(r, id, BACKLOG_COUNT)
+
+        # 2) subscribe for live updates
+        pubsub = r.pubsub()
+        pubsub.subscribe(channel)
+
+        last_ping = time.monotonic()
+        try:
+            # Notify client that SSE is alive
+            yield _sse_comment("connected")
+
+            for msg in pubsub.listen():
+                now = time.monotonic()
+                # heartbeat every ~25s
+                if now - last_ping > 25:
+                    yield _sse_comment("ping")
+                    last_ping = now
+
+                if msg.get("type") != "message":
+                    continue
+
+                try:
+                    data = json.loads(msg["data"])
+                    txt = f'{data.get("level") or ""} {data.get("message") or ""}'.strip()
+                    if txt:
+                        yield _sse_data(txt)
+                except Exception:
+                    # If payload not JSON, try raw data
+                    raw = msg.get("data")
+                    if isinstance(raw, str) and raw:
+                        yield _sse_data(raw)
+        finally:
+            try:
+                pubsub.unsubscribe(channel)
+                pubsub.close()
+            except Exception:
+                pass
+
+    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    # Avoid buffering by proxies/servers
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"    # for nginx
     return resp
 
 def pipeline_progress_json(request, id: str):

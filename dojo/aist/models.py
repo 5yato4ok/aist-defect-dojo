@@ -49,12 +49,12 @@ class AISTPipeline(models.Model):
     class Meta:
         ordering = ("-created",)
 
+    def __str__(self) -> str:
+        return f"SASTPipeline[{self.id}] {self.status}"
+
     def append_log(self, line: str) -> None:
         txt = self.logs or ""
         if not line.endswith("\n"):
             line += "\n"
         self.logs = txt + line
         self.save(update_fields=["logs", "updated"])
-
-    def __str__(self) -> str:
-        return f"SASTPipeline[{self.id}] {self.status}"
