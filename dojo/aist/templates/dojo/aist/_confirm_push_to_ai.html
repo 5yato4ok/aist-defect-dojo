@@ -1,0 +1,22 @@
+<div class="card shadow-sm mb-4">
+  <div class="card-body mb-4">
+    <h4>Please confirm sending findings to AI for triage</h4>
+
+    <form method="post">
+      {% csrf_token %}
+      <button
+        type="submit"
+        class="btn btn-secondary"
+        formaction="{% url 'dojo_aist:pipeline_stop' pipeline.id %}">
+        Finish pipeline without pushing to AI
+      </button>
+
+      <button
+        type="submit"
+        class="btn btn-danger"
+        formaction="{% url 'dojo_aist:push_to_ai' pipeline.id %}">
+        Push To AI
+      </button>
+    </form>
+  </div>
+</div>

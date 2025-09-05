@@ -26,6 +26,7 @@ class AISTPipelineRunForm(forms.Form):
         help_text="Choose a pre-configured SAST project",
         required=True,
     )
+    ask_push_to_ai = forms.BooleanField(required=True, initial=True, label="Ask for confirmation before pushing to AI")
     rebuild_images = forms.BooleanField(required=False, initial=False, label="Rebuild images")
     log_level = forms.ChoiceField(
         choices=[("INFO","INFO"),("DEBUG","DEBUG"),("WARNING","WARNING"),("ERROR","ERROR")],
@@ -110,4 +111,5 @@ class AISTPipelineRunForm(forms.Form):
             languages=self.cleaned_data.get("languages") or [],
             analyzers=self.cleaned_data.get("analyzers") or [],
             time_class_level=self.cleaned_data.get("time_class_level"),
+            ask_push_to_ai=self.cleaned_data.get("ask_push_to_ai") or True,
         )

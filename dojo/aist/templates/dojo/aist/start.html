@@ -34,6 +34,14 @@
 
                             {# Rebuild images (checkbox) — aligned like other fields #}
                             <div class="mb-3 row">
+                                <label class="col-sm-3 col-form-label">{{ form.ask_push_to_ai.label }}</label>
+                                <div class="col-sm-9">
+                                    <div class="form-check">
+                                        {{ form.ask_push_to_ai }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3 row">
                                 <label class="col-sm-3 col-form-label">{{ form.rebuild_images.label }}</label>
                                 <div class="col-sm-9">
                                     <div class="form-check">

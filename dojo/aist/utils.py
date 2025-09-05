@@ -44,6 +44,27 @@ class DatabaseLogHandler(logging.Handler):
             # Never break the main flow due to logging issues
             pass
 
+def _install_db_logging(pipeline_id: str, level=logging.INFO):
+    """Connect BD -handler for all required loggers ко всем нужным логгерам (root и 'pipeline')."""
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    dbh = DatabaseLogHandler(pipeline_id)
+    dbh.setLevel(level)
+    dbh.setFormatter(fmt)
+
+    plog = logging.getLogger("pipeline")
+    plog.setLevel(level)
+    plog.propagate = True
+    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
+               for h in plog.handlers):
+        plog.addHandler(dbh)
+
+    root = logging.getLogger("dojo.aist.pipeline.{pipeline_id}")
+    root.setLevel(level)
+    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
+               for h in root.handlers):
+        root.addHandler(dbh)
+    return root
+
 def _fmt_duration(start, end):
     if not start or not end:
         return None

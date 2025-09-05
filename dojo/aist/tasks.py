@@ -44,31 +44,9 @@ from django.apps import apps
 from django.urls import reverse
 
 from .models import AISTPipeline, AISTStatus
-from .utils import DatabaseLogHandler, build_callback_url
-from ..jira_link.helper import process_jira_project_form
+from .utils import _install_db_logging, build_callback_url
 from typing import Any, Dict, Iterable
 
-
-def _install_db_logging(pipeline_id: str, level=logging.INFO):
-    """Connect BD -handler for all required loggers ко всем нужным логгерам (root и 'pipeline')."""
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    dbh = DatabaseLogHandler(pipeline_id)
-    dbh.setLevel(level)
-    dbh.setFormatter(fmt)
-
-    plog = logging.getLogger("pipeline")
-    plog.setLevel(level)
-    plog.propagate = True
-    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
-               for h in plog.handlers):
-        plog.addHandler(dbh)
-
-    root = logging.getLogger("dojo.aist.pipeline.{pipeline_id}")
-    root.setLevel(level)
-    if not any(isinstance(h, DatabaseLogHandler) and getattr(h, "pipeline_id", None) == pipeline_id
-               for h in root.handlers):
-        root.addHandler(dbh)
-    return root
 
 @shared_task(bind=True)
 def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
@@ -214,7 +192,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             pipeline.save(update_fields=["status", "updated"])
             logger.info("Results uploaded; waiting for deduplication")
 
-            res = watch_deduplication.apply_async(args=[pipeline_id, log_level, params])
+            res = watch_deduplication.delay(pipeline_id=pipeline_id, log_level=log_level, params=params)
             pipeline.watch_dedup_task_id = res.id
             pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
@@ -243,7 +221,8 @@ def _csv(items: Iterable[Any]) -> str:
             result.append(s)
     return ", ".join(result)
 
-def send_request_to_ai(pipeline_id: str, log_level) -> None:
+@shared_task(bind=True)
+def send_request_to_ai(self, pipeline_id: str, log_level) -> None:
     log = _install_db_logging(pipeline_id, log_level)
     webhook_url = getattr(
         settings,
@@ -262,6 +241,10 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
                 .select_related("project__product")
                 .get(id=pipeline_id)
             )
+
+            if pipeline.status != AISTStatus.PUSH_TO_AI:
+                log.error("Attempt to push to AI before pipeline ready to Push it")
+                return
 
             project = pipeline.project
             product = getattr(project, "product", None)
@@ -301,7 +284,6 @@ def send_request_to_ai(pipeline_id: str, log_level) -> None:
         log.info("AI triage request accepted: status=%s body=%s", resp.status_code, resp.text[:500])
 
 
-
 @shared_task(bind=True)
 def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
     """Monitor deduplication progress and finalise the pipeline.
@@ -324,7 +306,6 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
     # Poll until all deduplication flags are true
     try:
         while True:
-
                 # Reload pipeline to capture any manual status change
                 pipeline.refresh_from_db()
                 # Exit early if user or another task finished the pipeline
@@ -336,8 +317,11 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
                     # Sleep for 10 seconds before checking again
                     time.sleep(3)
                     continue
-
-                send_request_to_ai(pipeline_id,log_level)
-                return
+                if params.get("ask_push_to_ai", True):
+                    pipeline.status = AISTStatus.WAITING_CONFIRMATION_TO_PUSH_TO_AI
+                    pipeline.save(update_fields=["status", "updated"])
+                    return
+                else:
+                    send_request_to_ai.delay(pipeline_id=pipeline_id, log_level=log_level)
     except Exception as exc:
         logger.error("Exception while waiting for deduplication to finish: %s", exc)

@@ -15,14 +15,14 @@
   {% csrf_token %}
   <button class="btn btn-warning btn-sm">Stop</button>
 </form>
-&nbsp;
-<a class="btn btn-outline-danger btn-sm" href="{% url 'dojo_aist:pipeline_delete' pipeline.id %}">Delete…</a>
+<a class="btn btn-outline-danger btn-sm" href="{% url 'dojo_aist:pipeline_delete' pipeline.id %}">Delete...</a>
 
 <hr/>
 
 {# --- Status specific UI --- #}
 {% include "dojo/aist/_pipeline_status_container.html" %}
 
+<hr/>
 
 {# --- Logs (collapsible) --- #}
 <div class="card mb-3">

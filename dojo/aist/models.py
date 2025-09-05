@@ -7,6 +7,8 @@ class AISTStatus(models.TextChoices):
     SAST_LAUNCHED = "SAST_LAUNCHED", "Launched"
     UPLOADING_RESULTS = "UPLOADING_RESULTS", "Uploading Results"
     WAITING_DEDUPLICATION_TO_FINISH = "WAITING_DEDUPLICATION_TO_FINISH", "Waiting Deduplication To Finish"
+    WAITING_CONFIRMATION_TO_PUSH_TO_AI = "WAITING_CONFIRMATION_TO_PUSH_TO_AI", "Waiting Confirmation To Push to AI"
+    PUSH_TO_AI = "PUSH_TO_AI", "Push to AI"
     WAITING_RESULT_FROM_AI = "WAITING_RESULT_FROM_AI", "Waiting Result From AI"
     FINISHED = "FINISHED", "Finished"
 
