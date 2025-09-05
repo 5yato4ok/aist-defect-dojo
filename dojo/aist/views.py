@@ -21,6 +21,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
 from .tasks import run_sast_pipeline
@@ -206,6 +207,7 @@ def start_pipeline(request: HttpRequest) -> HttpResponse:
     } for p in page_obj.object_list]
 
     history_qs_str = _qs_without(request, "page")
+    add_breadcrumb( title="Start pipeline", top_level=True, request=request)
 
     if request.method == "POST":
         form = AISTPipelineRunForm(request.POST)
@@ -272,7 +274,7 @@ def pipeline_list(request):
     qs_str = _qs_without(request, "page")
 
     projects = AISTProject.objects.select_related("product").order_by("product__name")
-
+    add_breadcrumb(title="Pipeline History", top_level=True, request=request)
     return render(
         request,
         'dojo/aist/pipeline_list.html',
@@ -297,6 +299,7 @@ def pipeline_detail(request, id: str):
     if request.headers.get("X-Partial") == "status":
         return render(request, "dojo/aist/_pipeline_status_container.html", {"pipeline": pipeline})
 
+    add_breadcrumb(parent=pipeline, title="Pipeline Detail", top_level=False, request=request)
     return render(request, "dojo/aist/pipeline_detail.html", {"pipeline": pipeline})
 
 
@@ -323,6 +326,7 @@ def delete_pipeline_view(request, id: str):
     if request.method == "POST":
         pipeline.delete()
         return redirect("dojo_aist:start_pipeline")
+    add_breadcrumb(parent=pipeline, title="Delete pipeline", top_level=False, request=request)
     return render(request, "dojo/aist/confirm_delete.html", {"pipeline": pipeline})
 
 
