@@ -2009,7 +2009,7 @@ AIST_PIPELINE_CODE_PATH = env(
     default=str(Path(__file__).resolve().parent.parent.parent / "sast-combinator" / "tools" / "sast-pipeline")
 )
 
-AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist-projects")
+AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist/projects")
 
 #CALLBACK_SECRET = "my_generated_token"
 REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += ("dojo.aist.auth.CallbackTokenAuthentication",)

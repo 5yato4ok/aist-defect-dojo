@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ('supported_languages', models.JSONField(blank=True, default=list)),
                 ('script_path', models.CharField(max_length=1024)),
                 ('project_version', models.CharField(blank=True, max_length=255, null=True)),
-                ('output_dir', models.CharField(default='/tmp/aist-output', max_length=1024)),
+                ('output_dir', models.CharField(default='/tmp/aist/output', max_length=1024)),
                 ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='dojo.product')),
             ],
         ),

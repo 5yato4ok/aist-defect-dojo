@@ -110,6 +110,7 @@ services:
         - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
         - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
         - "/var/run/docker.sock:/var/run/docker.sock"
+        - "/tmp/aist/:/tmp/aist/"
   initializer:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
