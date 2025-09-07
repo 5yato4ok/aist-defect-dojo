@@ -16,7 +16,6 @@ RUN \
     dnsutils \
     libpq-dev \
     postgresql-client \
-    docker.io \
     xmlsec1 \
     git \
     uuid-runtime \
@@ -49,6 +48,7 @@ RUN \
     dnsutils \
     xmlsec1 \
     git \
+    docker.io \
     uuid-runtime \
     libpq-dev \
     # only required for the dbshell (used by the initializer job)

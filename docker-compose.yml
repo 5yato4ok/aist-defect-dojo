@@ -82,7 +82,6 @@ services:
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
         - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
-        - "/var/run/docker.sock:/var/run/docker.sock"
   celeryworker:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
@@ -100,12 +99,17 @@ services:
       DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
       DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
       AIST_PIPELINE_CODE_PATH: "/app/sast-pipeline"
+      C_FORCE_ROOT: "1"
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_BUILDKIT: 1
+    user: "0:0"
     volumes:
         - type: bind
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
         - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
         - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
+        - "/var/run/docker.sock:/var/run/docker.sock"
   initializer:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
