@@ -116,10 +116,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         analyzers_helper = AnalyzersConfigHelper()
 
-        script_path = get_param("script_path", None)
-        if not os.path.isfile(script_path):
-            raise RuntimeError("Incorrrect script path for AIST pipeline.")
-
         output_dir = get_param("output_dir", os.path.join("/tmp", "aist_output", project_name or "project"))
         languages = get_param("languages", [])
         if isinstance(languages, str):
@@ -132,6 +128,10 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         dojo_product_name = get_param("dojo_product_name", project_name or None)
 
         pipeline_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
+        script_path = get_param("script_path", None)
+        script_path = os.path.join(pipeline_path, script_path)
+        if not os.path.isfile(script_path):
+            raise RuntimeError("Incorrrect script path for AIST pipeline.")
         dockerfile_path = os.path.join(pipeline_path, "Dockerfiles", "builder", "Dockerfile")
         if not os.path.isfile(dockerfile_path):
             raise RuntimeError("Dockerfile does not exist")
