@@ -19,12 +19,34 @@ class AISTProject(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     supported_languages = models.JSONField(default=list, blank=True)
     script_path = models.CharField(max_length=1024)
-    project_version = models.CharField(max_length=255, null=True, blank=True)
     output_dir = models.CharField(max_length=1024, default="/tmp/aist-output")
     compilable = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         return self.product.name
+
+class AISTProjectVersion(models.Model):
+    project = models.ForeignKey(
+        AISTProject, on_delete=models.CASCADE, related_name="versions"
+    )
+    version = models.CharField(max_length=64, db_index=True)
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created = models.DateTimeField(auto_now_add=True, editable=False)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "version"],
+                name="uniq_project_version_per_project",
+            )
+        ]
+        ordering = ["-created"]
+
+    def __str__(self):
+        return f"{self.project_id}:{self.version}"
 
 
 class AISTPipeline(models.Model):
@@ -34,7 +56,14 @@ class AISTPipeline(models.Model):
 
     id = models.CharField(primary_key=True, max_length=64)
 
-    project = models.ForeignKey(AISTProject, on_delete=models.CASCADE, related_name="aist_pipelines")
+    project = models.ForeignKey(AISTProject, on_delete=models.PROTECT, related_name="aist_pipelines")
+    project_version = models.ForeignKey(
+        AISTProjectVersion,
+        on_delete=models.PROTECT,
+        related_name="pipelines",
+        db_index=True,
+        null=True, blank=True,
+    )
     status = models.CharField(max_length=64, choices=AISTStatus.choices, default=AISTStatus.FINISHED)
 
     tests = models.ManyToManyField(Test, related_name="aist_pipelines", blank=True)

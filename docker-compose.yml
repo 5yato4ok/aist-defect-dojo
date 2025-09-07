@@ -82,6 +82,7 @@ services:
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
         - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
+        - "/var/run/docker.sock:/var/run/docker.sock"
   celeryworker:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:

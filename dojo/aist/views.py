@@ -246,6 +246,10 @@ def start_pipeline(request: HttpRequest) -> HttpResponse:
                 p = AISTPipeline.objects.create(
                     id=pipeline_id,
                     project=form.cleaned_data["project"],
+                    project_version=(
+                            form.cleaned_data.get("project_version")  # user choice
+                            or form.cleaned_data["project"].versions.order_by("-created").first()  # fallback
+                    ),
                     status=AISTStatus.FINISHED,
                 )
             # Launch the Celery task and record its id on the pipeline.

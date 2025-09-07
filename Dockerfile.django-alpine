@@ -16,6 +16,7 @@ RUN \
     bind-tools \
     postgresql16-client \
     xmlsec \
+    docker-cli \
     git \
     util-linux \
     curl-dev \

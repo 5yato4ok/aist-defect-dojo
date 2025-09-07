@@ -1,7 +1,7 @@
 from __future__ import annotations
 from django import forms
 from django.conf import settings
-from .models import AISTProject
+from .models import AISTProject, AISTProjectVersion
 import json
 from .utils import _load_analyzers_config
 
@@ -15,6 +15,12 @@ class AISTPipelineRunForm(forms.Form):
         label="Project",
         help_text="Choose a pre-configured SAST project",
         required=True,
+    )
+    project_version = forms.ModelChoiceField(
+        queryset=AISTProjectVersion.objects.none(),  # заполним позже в __init__
+        label="Project version",
+        required=False,
+        help_text="By default will be used latest commit on master branch",
     )
     ask_push_to_ai = forms.BooleanField(required=True, initial=True, label="Ask for confirmation before pushing to AI")
     rebuild_images = forms.BooleanField(required=False, initial=False, label="Rebuild images")
@@ -45,6 +51,7 @@ class AISTPipelineRunForm(forms.Form):
             self.fields["languages"].choices = [(x, x) for x in cfg.get_supported_languages()]
             self.fields["analyzers"].choices = [(x, x) for x in cfg.get_supported_analyzers()]
             self.fields["time_class_level"].choices = [(x, x) for x in cfg.get_analyzers_time_class()]
+
         if not self.is_bound:
             return
         project_id = self.data.get(self.add_prefix("project")) or None
@@ -52,6 +59,7 @@ class AISTPipelineRunForm(forms.Form):
         if project_id:
             try:
                 proj = AISTProject.objects.get(id=project_id)
+                self.fields["project_version"].queryset = proj.versions.all()
             except AISTProject.DoesNotExist:
                 pass
 
@@ -88,11 +96,16 @@ class AISTPipelineRunForm(forms.Form):
     def get_params(self) -> dict:
         """Collect final CLI/runner parameters from the selected SASTProject and form options."""
         proj: AISTProject = self.cleaned_data["project"]
+        pv: AISTProjectVersion | None = self.cleaned_data.get("project_version")
+
+        if not pv:
+            pv = proj.versions.order_by("-created").first()
+
         return dict(
             # from project model (immutable in the form)
             project_name=proj.product.name,
             script_path=proj.script_path,
-            project_version=proj.project_version,
+            project_version=(pv.id if pv else None),
             supported_languages=proj.supported_languages,
             output_dir=proj.output_dir,
             # from user options

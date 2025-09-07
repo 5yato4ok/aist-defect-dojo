@@ -111,7 +111,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
             project = pipeline.project
             project_name = project.product.name if project else None
-            project_version = project.project_version if project else None
+            project_version = pipeline.project_version.version if pipeline.project_version else None
             project_supported_languages = project.supported_languages if project else []
 
         analyzers_helper = AnalyzersConfigHelper()

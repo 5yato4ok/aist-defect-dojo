@@ -16,6 +16,7 @@ RUN \
     dnsutils \
     libpq-dev \
     postgresql-client \
+    docker.io \
     xmlsec1 \
     git \
     uuid-runtime \
