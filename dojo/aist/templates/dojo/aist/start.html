@@ -206,141 +206,248 @@
 
     {# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
     <script>
-        (function () {
-            // Build a map: project_id -> { supported_languages: [...], versions: [{id, label}, ...] }
-            const PROJECTS = {
-                {% for p in form.fields.project.queryset %}
-                    "{{ p.id }}": {
-                        supported_languages: {{ p.supported_languages|safe }},
-                        versions: [
-                            {% for v in p.versions.all %}
-                                {"id": "{{ v.id }}", "label": "{{ v|escapejs }}"}{% if not forloop.last %},{% endif %}
-                            {% endfor %}
-                        ]
-                    }{% if not forloop.last %},{% endif %}
-                {% endfor %}
-            };
+(function () {
+  "use strict";
 
-            const form = document.querySelector('form[method="post"]');
-            if (!form) return;
+  /* run once */
+  if (window.__AIST_BOOTED__) return;
+  window.__AIST_BOOTED__ = true;
 
-            const selProject = form.querySelector('select[name="{{ form.project.html_name }}"]');
-            const selTime = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
-            const langsWrap = document.getElementById('languages-group');
-            const langCbs = () => form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
-            const selVersion = form.querySelector('select[name="{{ form.project_version.html_name }}"]');
+  /* helpers */
+  function getCookie(name) {
+    var value = "; " + document.cookie;
+    var parts = value.split("; " + name + "=");
+    if (parts.length === 2) return decodeURIComponent(parts.pop().split(";").shift());
+    return null;
+  }
+  function getCSRFToken(form) {
+    return getCookie("csrftoken") ||
+           (form.querySelector('input[name="csrfmiddlewaretoken"]') ? form.querySelector('input[name="csrfmiddlewaretoken"]').value : "");
+  }
+  function normalizeVersions(raw) {
+    if (!raw) return [];
+    if (Object.prototype.toString.call(raw) === "[object Array]") {
+      var out = [];
+      for (var i = 0; i < raw.length; i++) {
+        var v = raw[i];
+        if (v && typeof v === "object") {
+          var id  = (v.id != null ? String(v.id) : (v.value != null ? String(v.value) : (v.slug != null ? String(v.slug) : String(v))));
+          var lbl = (v.label != null ? String(v.label) : (v.name  != null ? String(v.name)  : (v.id    != null ? String(v.id)   : String(v))));
+          out.push({ id: id, label: lbl });
+        } else {
+          out.push({ id: String(v), label: String(v) });
+        }
+      }
+      return out;
+    }
+    if (typeof raw === "object") {
+      var out2 = [];
+      for (var k in raw) if (Object.prototype.hasOwnProperty.call(raw, k)) {
+        var vv = raw[k];
+        if (vv && typeof vv === "object") out2.push({ id: String(vv.id != null ? vv.id : k), label: String(vv.label != null ? vv.label : (vv.name != null ? vv.name : k)) });
+        else out2.push({ id: String(k), label: String(vv) });
+      }
+      return out2;
+    }
+    return [{ id: String(raw), label: String(raw) }];
+  }
+  function prettifyLabel(label, projectId) {
+    var pid = String(projectId || "");
+    var s = String(label || "");
+    var prefix = pid + ":";
+    if (pid && s.indexOf(prefix) === 0) return s.slice(prefix.length);
+    return s;
+  }
+  function hasSelectpicker() { return !!(window.jQuery && window.jQuery.fn && window.jQuery.fn.selectpicker); }
+  function isSelectpickerApplied(el) {
+    if (!hasSelectpicker() || !el) return false;
+    var $ = window.jQuery;
+    return !!($(el).data("selectpicker")) || ($(el).parent().hasClass("bootstrap-select"));
+  }
 
-            // 1) Languages:
-            //    - "Fixed" languages (supported by the selected project) are checked and disabled.
-            //    - All other languages are enabled and UNCHECKED (so unsupported ones won't stay checked after switching the project).
-            function updateLanguageCheckboxes() {
-                if (!langsWrap || !selProject) return;
+  /* main */
+  function main() {
+    var form = document.querySelector('form[method="post"]');
+    if (!form) return;
 
-                const proj = PROJECTS[selProject.value] || {supported_languages: []};
-                const fixed = new Set(Array.isArray(proj.supported_languages) ? proj.supported_languages : []);
+    var selProject = form.querySelector('select[name="{{ form.project.html_name }}"]');
+    var selTime    = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
+    var selVersion = form.querySelector('select[name="{{ form.project_version.html_name }}"]');
+    var langsWrap  = document.getElementById("languages-group");
 
-                langCbs().forEach(cb => {
-                    const isFixed = fixed.has(cb.value);
+    var DEFAULT_EMPTY_LABEL = "Use default (latest on default branch)";
+    var metaUrlTemplate = "{% url 'dojo_aist:aist_project_meta' pk=0 %}";
+    var defaultsUrl     = "{% url 'dojo_aist:aist_default_analyzers' %}";
 
-                    // Ensure standard Bootstrap class is present.
-                    cb.classList.add('form-check-input');
+    function languageCheckboxes() {
+      return langsWrap ? langsWrap.querySelectorAll('input[name="{{ form.languages.html_name }}"]') : [];
+    }
+    function setLanguages(supported) {
+      var fixed = {};
+      if (supported && supported.length) for (var i = 0; i < supported.length; i++) fixed[supported[i]] = true;
+      var boxes = languageCheckboxes();
+      for (var j = 0; j < boxes.length; j++) {
+        var cb = boxes[j];
+        var isFixed = !!fixed[cb.value];
+        cb.classList.add("form-check-input");
+        var wrap = cb.closest ? cb.closest(".form-check") : null;
+        var lbl  = wrap ? wrap.querySelector(".form-check-label") : null;
+        if (isFixed) { cb.checked = true; cb.disabled = true; if (lbl) lbl.classList.add("text-muted"); }
+        else { cb.disabled = false; cb.checked = false; if (lbl) lbl.classList.remove("text-muted"); }
+      }
+    }
 
-                    if (isFixed) {
-                        cb.checked = true;    // Always keep fixed ones checked
-                        cb.disabled = true;   // Prevent unchecking
-                        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.add('text-muted');
-                    } else {
-                        cb.disabled = false;
-                        cb.checked = false;  // Important: clear non-supported selections on project switch
-                        cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.remove('text-muted');
-                    }
-                });
-            }
+    function rebuildProjectVersionSelect(versionsRaw, projectId) {
+      if (!selVersion) return;
 
-            // 2) Project versions:
-            //    - Rebuild the <select> options based on the selected project.
-            //    - If no versions exist, disable the control.
-            function updateProjectVersions() {
-                if (!selVersion || !selProject) return;
+      if (document.activeElement === selVersion) {
+        try { document.activeElement.blur(); } catch (e) {}
+      }
 
-                const proj = PROJECTS[selProject.value] || {versions: []};
-                const versions = Array.isArray(proj.versions) ? proj.versions : [];
+      var list = normalizeVersions(versionsRaw);
+      var usingPlugin = isSelectpickerApplied(selVersion);
+      var $ = window.jQuery;
 
-                // Full rebuild
-                selVersion.innerHTML = '';
+      if (usingPlugin) {
+        try { $(selVersion).selectpicker("destroy"); } catch (e) {}
 
-                // First (empty) option — use default (latest on default branch)
-                const defOpt = document.createElement('option');
-                defOpt.value = '';
-                defOpt.textContent = 'Use default (latest on default branch)';
-                selVersion.appendChild(defOpt);
+        while (selVersion.options.length) selVersion.remove(0);
+        selVersion.setAttribute("title", DEFAULT_EMPTY_LABEL);
+        selVersion.add(new Option(DEFAULT_EMPTY_LABEL, ""));
+        for (var i = 0; i < list.length; i++) {
+          selVersion.add(new Option(prettifyLabel(list[i].label, projectId), list[i].id));
+        }
 
-                if (versions.length) {
-                    versions.forEach(v => {
-                        const opt = document.createElement('option');
-                        opt.value = v.id;
-                        opt.textContent = v.label;
-                        selVersion.appendChild(opt);
-                    });
-                    selVersion.disabled = false;
-                } else {
-                    selVersion.disabled = true;
-                }
-            }
+        var disabled = (list.length === 0);
+        selVersion.disabled = disabled;
 
-            // 3) Default analyzers refresh:
-            //    - POST current (project, time_class_level, languages) to get recommended analyzers.
-            //    - Update the hidden selection signature and analyzer checkboxes accordingly.
-            const url = "{% url 'dojo_aist:aist_default_analyzers' %}";
+        $(selVersion).selectpicker();
+        $(selVersion)
+          .prop("disabled", disabled)
+          .selectpicker("render")
+          .selectpicker("refresh")
+          .selectpicker("val", "");
 
-            function getCSRF() {
-                const inp = form.querySelector('input[name=csrfmiddlewaretoken]');
-                return inp ? inp.value : '';
-            }
+        var $wrap = $(selVersion).closest(".bootstrap-select");
+        if ($wrap.length) {
+          $wrap.toggleClass("disabled", disabled);
+          var $btn = $wrap.find("button");
+          if ($btn.length) { $btn.prop("disabled", disabled).blur(); }
+        }
+      } else {
+        selVersion.innerHTML = "";
+        selVersion.add(new Option(DEFAULT_EMPTY_LABEL, ""));
+        for (var k = 0; k < list.length; k++) {
+          selVersion.add(new Option(prettifyLabel(list[k].label, projectId), list[k].id));
+        }
+        selVersion.disabled = (list.length === 0);
+        setTimeout(function(){ try { selVersion.blur(); } catch(e){} }, 0);
+      }
 
-            function collectAndRefreshAnalyzers() {
-                const fd = new FormData();
-                fd.append("project", selProject?.value || "");
-                fd.append("time_class_level", selTime?.value || "");
-                langCbs().forEach(cb => {
-                    if (cb.checked) fd.append("languages", cb.value);
-                });
+      var fs = selVersion.closest ? selVersion.closest("fieldset") : null;
+      if (fs && fs.hasAttribute("disabled")) fs.removeAttribute("disabled");
+    }
 
-                fetch(url, {
-                    method: "POST",
-                    headers: {"X-CSRFToken": getCSRF()},
-                    body: fd
-                })
-                    .then(r => r.ok ? r.json() : Promise.reject(r))
-                    .then(data => {
-                        const sig = form.querySelector('input[name="{{ form.selection_signature.html_name }}"]');
-                        if (sig && data.signature) sig.value = data.signature;
+    function fetchProjectMeta(projectId, done) {
+      if (!projectId) {
+        setLanguages([]);
+        rebuildProjectVersionSelect([], projectId);
+        if (done) done();
+        return;
+      }
+      var url = metaUrlTemplate.replace("/0/", "/" + String(projectId) + "/");
+      fetch(url, { credentials: "same-origin" })
+        .then(function (r) {
+          if (!r.ok) return r.text().then(function(){ throw new Error("HTTP " + r.status); });
+          return r.json();
+        })
+        .then(function (data) {
+          setLanguages(data && data.supported_languages ? data.supported_languages : []);
+          rebuildProjectVersionSelect(data && data.versions ? data.versions : [], projectId);
+          if (done) done();
+        })
+        .catch(function () {
+          setLanguages([]);
+          rebuildProjectVersionSelect([], projectId);
+          if (done) done();
+        });
+    }
 
-                        const wanted = new Set(data.defaults || []);
-                        form.querySelectorAll('input[name="{{ form.analyzers.html_name }}"]').forEach(cb => {
-                            cb.checked = wanted.has(cb.value);
-                        });
-                    })
-                    .catch(() => {
-                    });
-            }
+    function collectAndRefreshAnalyzers() {
+      if (!defaultsUrl) return Promise.resolve();
+      var fd = new FormData();
+      fd.append("project", selProject ? selProject.value : "");
+      fd.append("time_class_level", selTime ? selTime.value : "");
+      var boxes = languageCheckboxes();
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) fd.append("languages", boxes[i].value);
 
-            // Event bindings
-            selProject && selProject.addEventListener('change', () => {
-                updateLanguageCheckboxes();
-                updateProjectVersions();
-                collectAndRefreshAnalyzers();
-            });
-            selTime && selTime.addEventListener('change', collectAndRefreshAnalyzers);
-            form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
-                cb.addEventListener('change', collectAndRefreshAnalyzers);
-            });
+      var csrf = getCSRFToken(form);
 
-            // Initial load
-            updateLanguageCheckboxes();
-            updateProjectVersions();
-        })();
-    </script>
+      return fetch(defaultsUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "X-CSRFToken": csrf,
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "application/json"
+        },
+        body: fd
+      })
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function(){ throw new Error("HTTP " + r.status); });
+        return r.json();
+      })
+      .then(function (data) {
+        var sig = form.querySelector('input[name="{{ form.selection_signature.html_name }}"]');
+        if (sig && data && data.signature) sig.value = data.signature;
 
+        var wanted = {};
+        if (data && data.defaults && data.defaults.length) {
+          for (var j = 0; j < data.defaults.length; j++) wanted[data.defaults[j]] = true;
+        }
+        var analyzerBoxes = form.querySelectorAll('input[name="{{ form.analyzers.html_name }}"]');
+        for (var k = 0; k < analyzerBoxes.length; k++) {
+          analyzerBoxes[k].checked = !!wanted[analyzerBoxes[k].value];
+        }
+      })
+      .catch(function () { /* silent */ });
+    }
+
+    function onProjectChanged() {
+      fetchProjectMeta(selProject ? selProject.value : "", function () {
+        collectAndRefreshAnalyzers();
+      });
+    }
+
+    if (selProject) {
+      selProject.addEventListener("change", onProjectChanged);
+      if (hasSelectpicker()) {
+        try { window.jQuery(selProject).off("changed.bs.select.aist").on("changed.bs.select.aist", onProjectChanged); } catch (e) {}
+      }
+    }
+    if (selTime) {
+      selTime.addEventListener("change", collectAndRefreshAnalyzers);
+      if (hasSelectpicker()) {
+        try { window.jQuery(selTime).off("changed.bs.select.aist").on("changed.bs.select.aist", collectAndRefreshAnalyzers); } catch (e) {}
+      }
+    }
+    var boxes = languageCheckboxes();
+    for (var q = 0; q < boxes.length; q++) boxes[q].addEventListener("change", collectAndRefreshAnalyzers);
+
+    if (selProject && selProject.value) {
+      fetchProjectMeta(selProject.value, function(){ collectAndRefreshAnalyzers(); });
+    } else {
+      setLanguages([]);
+      rebuildProjectVersionSelect([], selProject ? selProject.value : "");
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", main);
+  } else {
+    main();
+  }
+})();
+</script>
 
 {% endblock %}

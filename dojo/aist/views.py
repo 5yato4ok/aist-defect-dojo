@@ -541,3 +541,19 @@ def pipeline_progress_json(request, id: str):
         },
         "tests": tests_payload,
     })
+
+@csrf_exempt
+def project_meta(request, pk: int):
+    try:
+        p = AISTProject.objects.get(pk=pk)
+    except AISTProject.DoesNotExist:
+        raise Http404("Project not found")
+
+    versions = [
+        {"id": str(v.id), "label": str(v)}
+        for v in p.versions.all()
+    ]
+    return JsonResponse({
+        "supported_languages": p.supported_languages or [],
+        "versions": versions,
+    })

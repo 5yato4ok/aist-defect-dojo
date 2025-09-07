@@ -45,6 +45,9 @@ class AISTPipelineRunForm(forms.Form):
         # CheckboxSelectMultiple: class will be applied to each checkbox input
         self.fields["languages"].widget.attrs.update({"class": "form-check-input"})
         self.fields["analyzers"].widget.attrs.update({"class": "form-check-input"})
+        self.fields["project_version"].widget.attrs.update({"class": "form-select"})
+        self.fields["project_version"].empty_label = "Use default (latest on default branch)"
+        self.fields["project_version"].queryset = AISTProjectVersion.objects.none()
 
         cfg = _load_analyzers_config()
         if cfg:
@@ -52,15 +55,16 @@ class AISTPipelineRunForm(forms.Form):
             self.fields["analyzers"].choices = [(x, x) for x in cfg.get_supported_analyzers()]
             self.fields["time_class_level"].choices = [(x, x) for x in cfg.get_analyzers_time_class()]
 
-        project_id = self.initial.get("project") or None
-        if project_id:
-            try:
-                proj0 = AISTProject.objects.get(id=project_id)
-                self.fields["project_version"].queryset = proj0.versions.all()
-            except AISTProject.DoesNotExist:
-                pass
         if not self.is_bound:
             return
+
+        project_id = self.data.get(self.add_prefix("project")) or None
+        if project_id:
+            try:
+                proj = AISTProject.objects.get(id=project_id)
+                self.fields["project_version"].queryset = proj.versions.all()
+            except AISTProject.DoesNotExist:
+                pass
 
         posted_langs = self.data.getlist(self.add_prefix("languages"))
         project_supported_languages = (proj.supported_languages if proj else []) or []
