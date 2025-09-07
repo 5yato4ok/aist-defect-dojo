@@ -52,16 +52,15 @@ class AISTPipelineRunForm(forms.Form):
             self.fields["analyzers"].choices = [(x, x) for x in cfg.get_supported_analyzers()]
             self.fields["time_class_level"].choices = [(x, x) for x in cfg.get_analyzers_time_class()]
 
-        if not self.is_bound:
-            return
-        project_id = self.data.get(self.add_prefix("project")) or None
-        proj = None
+        project_id = self.initial.get("project") or None
         if project_id:
             try:
-                proj = AISTProject.objects.get(id=project_id)
-                self.fields["project_version"].queryset = proj.versions.all()
+                proj0 = AISTProject.objects.get(id=project_id)
+                self.fields["project_version"].queryset = proj0.versions.all()
             except AISTProject.DoesNotExist:
                 pass
+        if not self.is_bound:
+            return
 
         posted_langs = self.data.getlist(self.add_prefix("languages"))
         project_supported_languages = (proj.supported_languages if proj else []) or []

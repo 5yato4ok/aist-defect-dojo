@@ -207,45 +207,90 @@
     {# --- JS: auto-check/disable project languages + toggle project version visibility --- #}
     <script>
         (function () {
+            // Build a map: project_id -> { supported_languages: [...], versions: [{id, label}, ...] }
             const PROJECTS = {
                 {% for p in form.fields.project.queryset %}
                     "{{ p.id }}": {
-                        supported_languages: {{ p.supported_languages|safe }}
+                        supported_languages: {{ p.supported_languages|safe }},
+                        versions: [
+                            {% for v in p.versions.all %}
+                                {"id": "{{ v.id }}", "label": "{{ v|escapejs }}"}{% if not forloop.last %},{% endif %}
+                            {% endfor %}
+                        ]
                     }{% if not forloop.last %},{% endif %}
                 {% endfor %}
             };
 
-            const select = document.querySelector('select[name="{{ form.project.html_name }}"]');
-            const langsWrap = document.getElementById('languages-group');
+            const form = document.querySelector('form[method="post"]');
+            if (!form) return;
 
+            const selProject = form.querySelector('select[name="{{ form.project.html_name }}"]');
+            const selTime = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
+            const langsWrap = document.getElementById('languages-group');
+            const langCbs = () => form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
+            const selVersion = form.querySelector('select[name="{{ form.project_version.html_name }}"]');
+
+            // 1) Languages:
+            //    - "Fixed" languages (supported by the selected project) are checked and disabled.
+            //    - All other languages are enabled and UNCHECKED (so unsupported ones won't stay checked after switching the project).
             function updateLanguageCheckboxes() {
-                if (!langsWrap || !select) return;
-                const data = PROJECTS[select.value] || {supported_languages: []};
-                const fixed = new Set(Array.isArray(data.supported_languages) ? data.supported_languages : []);
-                const boxes = langsWrap.querySelectorAll('input[type="checkbox"][name="{{ form.languages.html_name }}"]');
-                boxes.forEach(cb => {
+                if (!langsWrap || !selProject) return;
+
+                const proj = PROJECTS[selProject.value] || {supported_languages: []};
+                const fixed = new Set(Array.isArray(proj.supported_languages) ? proj.supported_languages : []);
+
+                langCbs().forEach(cb => {
                     const isFixed = fixed.has(cb.value);
+
+                    // Ensure standard Bootstrap class is present.
+                    cb.classList.add('form-check-input');
+
                     if (isFixed) {
-                        cb.checked = true;
-                        cb.disabled = true;
-                        cb.classList.add('form-check-input');
+                        cb.checked = true;    // Always keep fixed ones checked
+                        cb.disabled = true;   // Prevent unchecking
                         cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.add('text-muted');
                     } else {
                         cb.disabled = false;
-                        cb.classList.add('form-check-input');
+                        cb.checked = false;  // Important: clear non-supported selections on project switch
                         cb.closest('.form-check')?.querySelector('.form-check-label')?.classList.remove('text-muted');
                     }
                 });
             }
 
-            updateLanguageCheckboxes();
-            select?.addEventListener('change', () => {
-                updateLanguageCheckboxes();
-            });
+            // 2) Project versions:
+            //    - Rebuild the <select> options based on the selected project.
+            //    - If no versions exist, disable the control.
+            function updateProjectVersions() {
+                if (!selVersion || !selProject) return;
 
-            const form = document.querySelector('form[method="post"]');
-            if (!form) return;
+                const proj = PROJECTS[selProject.value] || {versions: []};
+                const versions = Array.isArray(proj.versions) ? proj.versions : [];
 
+                // Full rebuild
+                selVersion.innerHTML = '';
+
+                // First (empty) option — use default (latest on default branch)
+                const defOpt = document.createElement('option');
+                defOpt.value = '';
+                defOpt.textContent = 'Use default (latest on default branch)';
+                selVersion.appendChild(defOpt);
+
+                if (versions.length) {
+                    versions.forEach(v => {
+                        const opt = document.createElement('option');
+                        opt.value = v.id;
+                        opt.textContent = v.label;
+                        selVersion.appendChild(opt);
+                    });
+                    selVersion.disabled = false;
+                } else {
+                    selVersion.disabled = true;
+                }
+            }
+
+            // 3) Default analyzers refresh:
+            //    - POST current (project, time_class_level, languages) to get recommended analyzers.
+            //    - Update the hidden selection signature and analyzer checkboxes accordingly.
             const url = "{% url 'dojo_aist:aist_default_analyzers' %}";
 
             function getCSRF() {
@@ -253,11 +298,11 @@
                 return inp ? inp.value : '';
             }
 
-            function collectAndRefresh() {
+            function collectAndRefreshAnalyzers() {
                 const fd = new FormData();
-                fd.append("project", form.querySelector('select[name="{{ form.project.html_name }}"]').value || "");
-                fd.append("time_class_level", form.querySelector('select[name="{{ form.time_class_level.html_name }}"]').value || "");
-                form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
+                fd.append("project", selProject?.value || "");
+                fd.append("time_class_level", selTime?.value || "");
+                langCbs().forEach(cb => {
                     if (cb.checked) fd.append("languages", cb.value);
                 });
 
@@ -280,13 +325,22 @@
                     });
             }
 
-            const projSel = form.querySelector('select[name="{{ form.project.html_name }}"]');
-            const timeSel = form.querySelector('select[name="{{ form.time_class_level.html_name }}"]');
-            const langCbs = form.querySelectorAll('input[name="{{ form.languages.html_name }}"]');
+            // Event bindings
+            selProject && selProject.addEventListener('change', () => {
+                updateLanguageCheckboxes();
+                updateProjectVersions();
+                collectAndRefreshAnalyzers();
+            });
+            selTime && selTime.addEventListener('change', collectAndRefreshAnalyzers);
+            form.querySelectorAll('input[name="{{ form.languages.html_name }}"]').forEach(cb => {
+                cb.addEventListener('change', collectAndRefreshAnalyzers);
+            });
 
-            projSel && projSel.addEventListener('change', collectAndRefresh);
-            timeSel && timeSel.addEventListener('change', collectAndRefresh);
-            langCbs.forEach(cb => cb.addEventListener('change', collectAndRefresh));
+            // Initial load
+            updateLanguageCheckboxes();
+            updateProjectVersions();
         })();
     </script>
+
+
 {% endblock %}
