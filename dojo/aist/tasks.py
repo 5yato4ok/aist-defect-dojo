@@ -116,7 +116,8 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         analyzers_helper = AnalyzersConfigHelper()
 
-        output_dir = get_param("output_dir", os.path.join("/tmp", "aist","output", project_name or "project"))
+        aist_path = getattr(settings, "AIST_OUTPUT_PATH", os.path.join("/tmp", "aist", "output"))
+        output_dir =  os.path.join(aist_path, project_name or "project")
         languages = get_param("languages", [])
         if isinstance(languages, str):
             languages = [languages]

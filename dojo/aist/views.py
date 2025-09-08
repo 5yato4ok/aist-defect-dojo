@@ -183,6 +183,23 @@ def push_to_ai(request, id:str):
     return redirect('dojo_aist:pipeline_detail', id=id)
 
 
+def pipeline_set_status(request, id: str):
+    if not AISTPipeline.objects.filter(id=id).exists():
+        raise Http404("Pipeline not found")
+
+    if request.method == "POST":
+        with transaction.atomic():
+            pipeline = (
+                AISTPipeline.objects
+                .select_for_update()
+                .get(id=id)
+            )
+
+            pipeline.status = AISTStatus.WAITING_CONFIRMATION_TO_PUSH_TO_AI
+            pipeline.save(update_fields=["status", "updated"])
+    return redirect('dojo_aist:pipeline_detail', id=id)
+
+
 def start_pipeline(request: HttpRequest) -> HttpResponse:
     """Launch a new SAST pipeline or redirect to the active one.
 

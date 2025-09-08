@@ -2011,7 +2011,7 @@ AIST_PIPELINE_CODE_PATH = env(
 
 AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist/projects")
 
-#CALLBACK_SECRET = "my_generated_token"
+CALLBACK_SECRET = env("CALLBACK_SECRET",  default="my_generated_token")
 REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += ("dojo.aist.auth.CallbackTokenAuthentication",)
 REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] += ("rest_framework.permissions.IsAuthenticated",)
 

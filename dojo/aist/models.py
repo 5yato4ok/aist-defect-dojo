@@ -19,7 +19,6 @@ class AISTProject(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     supported_languages = models.JSONField(default=list, blank=True)
     script_path = models.CharField(max_length=1024)
-    output_dir = models.CharField(max_length=1024, default="/tmp/aist/output")
     compilable = models.BooleanField(default=False)
 
     def __str__(self) -> str:
@@ -35,6 +34,7 @@ class AISTProjectVersion(models.Model):
 
     created = models.DateTimeField(auto_now_add=True, editable=False)
     updated = models.DateTimeField(auto_now=True)
+    output_dir = models.CharField(max_length=1024, default="/tmp/aist/output")
 
     class Meta:
         constraints = [

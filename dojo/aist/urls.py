@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import pipeline_detail, stop_pipeline_view, delete_pipeline_view, stream_logs_sse, start_pipeline, \
-    pipeline_progress_json, pipeline_callback, pipeline_status_stream, aist_default_analyzers,pipeline_list, push_to_ai, project_meta
+    pipeline_progress_json, pipeline_callback, pipeline_status_stream, aist_default_analyzers,pipeline_list, push_to_ai, project_meta, pipeline_set_status
 
 app_name = "dojo_aist"
 urlpatterns = [
@@ -15,5 +15,6 @@ urlpatterns = [
     path("pipeline/<str:id>/status/stream/", pipeline_status_stream, name="pipeline_status_stream"),
     path("aist/default-analyzers/", aist_default_analyzers, name="aist_default_analyzers"),
     path("pipelines/", pipeline_list, name="pipeline_list"),
+    path("pipelines/<str:id>/set_status_push_to_ai", pipeline_set_status, name="pipeline_set_status"), #TODO: make generic
     path("projects/<int:pk>/meta.json", project_meta, name="aist_project_meta")
 ]

@@ -12,6 +12,19 @@
 </div>
 
 <div class="card shadow-sm mb-4">
+    <form method="post">
+        {% csrf_token %}
+        <button
+                type="submit"
+                class="btn btn-outline-secondary btn-sm"
+                formaction="{% url 'dojo_aist:pipeline_set_status' pipeline.id %}">
+            <i class="fa fa-arrow-left" aria-hidden="true"></i>
+            Return to step Push To AI
+        </button>
+    </form>
+</div>
+
+<div class="card shadow-sm mb-4">
   <div class="card-header d-flex align-items-center justify-content-between">
     <div class="d-flex align-items-center gap-2">
       <i class="fa fa-flask" aria-hidden="true"></i>

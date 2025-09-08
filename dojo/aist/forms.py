@@ -110,7 +110,6 @@ class AISTPipelineRunForm(forms.Form):
             script_path=proj.script_path,
             project_version=(pv.id if pv else None),
             supported_languages=proj.supported_languages,
-            output_dir=proj.output_dir,
             # from user options
             rebuild_images=self.cleaned_data.get("rebuild_images") or False,
             log_level=self.cleaned_data.get("log_level") or "INFO",
