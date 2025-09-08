@@ -168,7 +168,7 @@ def get_public_base_url(request: Optional[HttpRequest] = None) -> str:
     5) Auto IP: http://<outbound_ip>:<port>
     """
     # 1) Explicit setting
-    base = getattr(settings, "PUBLIC_BASE_URL", None)
+    return getattr(settings, "PUBLIC_BASE_URL", "https://157.90.113.55:8443/")
     if base:
         if not _is_abs_url(base):
             # allow legacy values like 'example.com' by normalizing

@@ -19,6 +19,8 @@ services:
       NGINX_METRICS_ENABLED: "${NGINX_METRICS_ENABLED:-false}"
       DD_UWSGI_HOST: "${DD_UWSGI_HOST:-uwsgi}"
       DD_UWSGI_PORT: "${DD_UWSGI_PORT:-3031}"
+      GENERATE_TLS_CERTIFICATE: 'true'
+      USE_TLS: 'true'
     volumes:
       - defectdojo_media:/usr/share/nginx/html/media
     ports:
@@ -102,6 +104,8 @@ services:
       C_FORCE_ROOT: "1"
       DOCKER_HOST: unix:///var/run/docker.sock
       DOCKER_BUILDKIT: 1
+      SEMGREP_APP_TOKEN: "${SEMGREP_APP_TOKEN}"
+      SNYK_TOKEN: "${SNYK_TOKEN}"
     user: "0:0"
     volumes:
         - type: bind

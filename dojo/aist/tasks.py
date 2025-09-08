@@ -569,8 +569,9 @@ def after_upload_enrich_and_watch(results: list[int],
         pipeline.status = AISTStatus.WAITING_DEDUPLICATION_TO_FINISH
         pipeline.save(update_fields=["status", "updated"])
 
-        logger.info("Enrichment finished: %s findings enriched. Waiting for deduplication.", enriched)
+    logger.info("Enrichment finished: %s findings enriched. Waiting for deduplication.", enriched)
+    res = watch_deduplication.delay(pipeline_id=pipeline_id, log_level=log_level, params=params)
 
-        res = watch_deduplication.delay(pipeline_id=pipeline_id, log_level=log_level, params=params)
+    with transaction.atomic():
         pipeline.watch_dedup_task_id = res.id
         pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
