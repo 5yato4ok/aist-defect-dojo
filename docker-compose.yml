@@ -149,6 +149,11 @@ services:
     volumes:
       - defectdojo_redis:/data
 volumes:
-  defectdojo_postgres: {}
+  defectdojo_postgres:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /tmp/aist/db
   defectdojo_media: {}
   defectdojo_redis: {}
