@@ -19,8 +19,6 @@ services:
       NGINX_METRICS_ENABLED: "${NGINX_METRICS_ENABLED:-false}"
       DD_UWSGI_HOST: "${DD_UWSGI_HOST:-uwsgi}"
       DD_UWSGI_PORT: "${DD_UWSGI_PORT:-3031}"
-      GENERATE_TLS_CERTIFICATE: 'true'
-      USE_TLS: 'true'
     volumes:
       - defectdojo_media:/usr/share/nginx/html/media
     ports:
@@ -55,13 +53,11 @@ services:
       DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
       DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
       DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
-      AIST_PIPELINE_CODE_PATH: "/app/sast-pipeline"
     volumes:
         - type: bind
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
         - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
-        - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
   celerybeat:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
@@ -78,12 +74,10 @@ services:
       DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
       DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
       DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
-      AIST_PIPELINE_CODE_PATH: "/app/sast-pipeline"
     volumes:
         - type: bind
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
-        - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
   celeryworker:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
@@ -100,25 +94,11 @@ services:
       DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
       DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
       DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
-      AIST_PIPELINE_CODE_PATH: "/app/sast-pipeline"
-      C_FORCE_ROOT: "1"
-      DOCKER_HOST: unix:///var/run/docker.sock
-      DOCKER_BUILDKIT: 1
-      DD_CELERY_WORKER_POOL_TYPE: "prefork"
-      DD_CELERY_WORKER_CONCURRENCY: 6
-      DD_CELERY_WORKER_AUTOSCALE_MAX: 8
-      DD_CELERY_WORKER_AUTOSCALE_MIN: 2
-      DD_CELERY_WORKER_PREFETCH_MULTIPLIER: 1
-      DD_CELERY_LOG_LEVEL: "INFO"
-    user: "0:0"
     volumes:
         - type: bind
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
         - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
-        - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
-        - "/var/run/docker.sock:/var/run/docker.sock"
-        - "/tmp/aist/:/tmp/aist/"
   initializer:
     image: "defectdojo/defectdojo-django:${DJANGO_VERSION:-latest}"
     depends_on:
@@ -135,16 +115,12 @@ services:
       DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
       DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
       DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
-      AIST_PIPELINE_CODE_PATH: "/app/sast-pipeline"
     volumes:
         - type: bind
           source: ./docker/extra_settings
           target: /app/docker/extra_settings
-        - "./sast-combinator/tools/sast-pipeline:/app/sast-pipeline"
   postgres:
     image: postgres:17.6-alpine@sha256:3406990b6e4c7192317b6fdc5680498744f6142f01f0287f4ee0420d8c74063c
-    ports:
-      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: ${DD_DATABASE_NAME:-defectdojo}
       POSTGRES_USER: ${DD_DATABASE_USER:-defectdojo}
@@ -157,11 +133,6 @@ services:
     volumes:
       - defectdojo_redis:/data
 volumes:
-  defectdojo_postgres:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /root/work/aist/db
+  defectdojo_postgres: {}
   defectdojo_media: {}
   defectdojo_redis: {}
