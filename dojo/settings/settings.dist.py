@@ -2014,9 +2014,6 @@ AIST_PROJECTS_BUILD_DIR = env("AIST_PROJECTS_BUILD_DIR", default="/tmp/aist/proj
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="https://157.90.113.55:8443/")
 AIST_AI_TRIAGE_WEBHOOK_URL=env("AIST_AI_TRIAGE_WEBHOOK_URL", default="https://flaming.app.n8n.cloud/webhook/triage-sast")
 AIST_AI_TRIAGE_SECRET=""
-
-CALLBACK_SECRET = env("CALLBACK_SECRET",  default="6fSFfjLFLuZP20WAcfL93uTS8zZDfYUPHyaXt8Rd6EwmqpH0YeX5FHCQghoK2pmU")
-REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] += ("dojo.aist.auth.CallbackTokenAuthentication",)
 REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] += ("rest_framework.permissions.IsAuthenticated",)
 
 LOGIN_EXEMPT_URLS += (r"^aist/pipelines/[^/]+/callback/?$",)

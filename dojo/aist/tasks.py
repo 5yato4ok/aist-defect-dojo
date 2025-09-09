@@ -218,6 +218,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         else:
             repo_url = getattr(repo_params, "repo_url", "") or ""
             ref = getattr(repo_params, "commit_hash", None) or getattr(repo_params, "branch_tag", None)
+
             header = [
                 enrich_finding_task.s(fid, repo_url, ref, trim_path)
                 for fid in finding_ids

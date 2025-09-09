@@ -25,12 +25,12 @@ from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
 from .tasks import run_sast_pipeline, send_request_to_ai
+from rest_framework.authentication import TokenAuthentication
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
 
 from .utils import stop_pipeline, _fmt_duration, _qs_without
 from .logging_transport import _install_db_logging
-from .auth import CallbackTokenAuthentication
 import time
 from django.http import StreamingHttpResponse, Http404
 from django.db import close_old_connections
@@ -68,7 +68,7 @@ def aist_default_analyzers(request):
     })
 
 @api_view(["POST"])
-@authentication_classes([CallbackTokenAuthentication])
+@authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def pipeline_callback(request, id: str):
     try:
