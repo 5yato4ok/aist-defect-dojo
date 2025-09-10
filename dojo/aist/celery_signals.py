@@ -1,7 +1,7 @@
-# dojo/aist/celery_signals.py
+from __future__ import annotations
+
 from celery.signals import worker_process_init
 from .logging_transport import install_global_redis_log_handler
-from __future__ import annotations
 
 from django.db import models, transaction
 from django.db.models import F
