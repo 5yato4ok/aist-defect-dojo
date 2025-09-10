@@ -1,7 +1,7 @@
 from __future__ import annotations
 from django.db import models
 from django.utils import timezone
-from dojo.models import Test, Product
+from dojo.models import Test, Product, Finding
 
 class AISTStatus(models.TextChoices):
     SAST_LAUNCHED = "SAST_LAUNCHED", "Launched"
@@ -86,3 +86,92 @@ class AISTPipeline(models.Model):
             line += "\n"
         self.logs = txt + line
         self.save(update_fields=["logs", "updated"])
+
+class TestDeduplicationProgress(models.Model):
+    """Deduplication progress on one Test."""
+    test = models.OneToOneField(
+        Test, on_delete=models.CASCADE, related_name="dedupe_progress"
+    )
+    pending_tasks = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    deduplication_complete = models.BooleanField(default=False)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["test", "pending_tasks"])]
+
+    def __str__(self) -> str:
+        return f"DeduplicationTaskGroup(test={self.test_id}, remaining={self.pending_tasks})"
+
+    def mark_complete_if_finished(self) -> None:
+        if self.pending_tasks == 0 and not self.deduplication_complete:
+            self.deduplication_complete = True
+            self.completed_at = timezone.now()
+            self.save(update_fields=["deduplication_complete", "completed_at"])
+
+    def refresh_pending_tasks(self) -> None:
+        """
+        Recalculate the outstanding deduplication tasks for this group.
+
+        The number of pending tasks is defined as the difference between the
+        total number of findings belonging to the test and the number of
+        findings that have already been processed (a record exists in
+        ``ProcessedFinding``). Only findings that currently exist are
+        considered; if a finding is deleted its corresponding processed
+        record is effectively ignored when counting.
+
+        This method also updates ``deduplication_complete`` and
+        ``completed_at`` accordingly and synchronises the state back onto
+        the ``Test``. ``started_at`` will be set if it has not yet been
+        initialised. It is safe to call this method at any time as it
+        always sets the counters based on the current database state.
+        """
+        test_id = self.test_id
+        total_findings = Finding.objects.filter(test_id=test_id).count()
+        existing_finding_ids = Finding.objects.filter(test_id=test_id).values_list(
+            "id", flat=True
+        )
+        processed_count = ProcessedFinding.objects.filter(
+            test_id=test_id, finding_id__in=existing_finding_ids
+        ).count()
+        pending = max(total_findings - processed_count, 0)
+        updated_fields = []
+        if self.pending_tasks != pending:
+            self.pending_tasks = pending
+            updated_fields.append("pending_tasks")
+        if self.started_at is None:
+            self.started_at = timezone.now()
+            updated_fields.append("started_at")
+        completed_now = (pending == 0)
+        if completed_now and not self.deduplication_complete:
+            self.deduplication_complete = True
+            self.completed_at = timezone.now()
+            updated_fields.extend(["deduplication_complete", "completed_at"])
+        elif not completed_now and self.deduplication_complete:
+            self.deduplication_complete = False
+            self.completed_at = None
+            updated_fields.extend(["deduplication_complete", "completed_at"])
+        if updated_fields:
+            self.save(update_fields=updated_fields)
+        if completed_now:
+            Test.objects.filter(pk=test_id, deduplication_complete=False).update(
+                deduplication_complete=True
+            )
+        else:
+            Test.objects.filter(pk=test_id, deduplication_complete=True).update(
+                deduplication_complete=False
+            )
+
+
+class ProcessedFinding(models.Model):
+    """Set which findings are considered to avoid double decrement"""
+    test = models.ForeignKey(Test, on_delete=models.CASCADE)
+    finding = models.ForeignKey(Finding, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["test", "finding"], name="uniq_test_finding_processed"
+            )
+        ]

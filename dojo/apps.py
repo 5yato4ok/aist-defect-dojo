@@ -87,7 +87,6 @@ class DojoAppConfig(AppConfig):
         import dojo.test.signals
         import dojo.tool_product.signals  # noqa: F401
         # Import deduplication tracker to register signals
-        import dojo.deduplication_tracker  # noqa: F401
         import dojo.aist
 
 

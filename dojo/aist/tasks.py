@@ -1,30 +1,8 @@
-"""
-Celery tasks for the SAST pipeline integration.
-
-The tasks defined in this module orchestrate the long running
-operations involved in running the SAST pipeline.  These tasks run
-asynchronously within Celery workers so that the main web process
-remains responsive.
-
-``run_sast_pipeline`` performs the following steps:
-
-* Generates a unique pipeline identifier by invoking
-  ``docker_utils.get_pipeline_id``.
-* Calls ``configure_project_run_analyses`` to build the project and run
-  analyzers.  The returned launch data is persisted on the pipeline.
-* Uploads results to DefectDojo via ``upload_results`` and records the
-  resulting test IDs.
-* Transitions the pipeline status through each phase and schedules
-  monitoring of deduplication progress.
-
-``watch_deduplication`` polls the database periodically to detect
-when deduplication has completed for all tests imported by a
-pipeline.  Once complete the pipeline is marked as awaiting AI
-enrichment, then immediately marked finished (the AI step is
-reserved for future enhancement).
-"""
-
 from __future__ import annotations
+
+from .utils import build_callback_url, _import_sast_pipeline_package
+
+_import_sast_pipeline_package()
 
 import os
 import json
@@ -37,12 +15,8 @@ from typing import Any, Dict, List
 
 from celery import shared_task, current_app, chord
 from django.conf import settings
-from dojo.models import Test, Development_Environment
-from django.db import transaction
 
 from .models import AISTPipeline, AISTStatus
-from .utils import build_callback_url, _import_sast_pipeline_package
-from .logging_transport import _install_db_logging
 from typing import Any, Dict, Iterable
 from .internal_upload import upload_results_internal
 from .logging_transport import get_redis, STREAM_KEY
@@ -50,21 +24,18 @@ from django.db.models.functions import Concat
 from collections import defaultdict
 from django.db.models import F, Value
 
-_import_sast_pipeline_package()
-
 from pipeline.project_builder import configure_project_run_analyses  # type: ignore
 from pipeline.config_utils import AnalyzersConfigHelper  # type: ignore
 from pipeline.defect_dojo.repo_info import read_repo_params  # type: ignore
-from django.db import transaction
+from django.db import transaction, OperationalError
 from celery.exceptions import Ignore
-from dojo.models import Test
-import logging
+from dojo.models import Test, Finding, DojoMeta
+
 import requests
-import re
+
 from typing import Optional
 from celery import shared_task  # type: ignore
-
-from dojo.models import Finding, DojoMeta
+from .models import TestDeduplicationProgress
 from .logging_transport import _install_db_logging
 
 @shared_task(bind=True)
@@ -576,3 +547,61 @@ def after_upload_enrich_and_watch(results: list[int],
     with transaction.atomic():
         pipeline.watch_dedup_task_id = res.id
         pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
+
+
+
+@shared_task(
+    name="dojo.aist.reconcile_deduplication",
+    rate_limit="5/s",                    # throttle to protect the DB
+    autoretry_for=(OperationalError,),   # retry on transient DB issues
+    retry_backoff=True,
+    retry_jitter=True,
+    max_retries=5,
+)
+def reconcile_deduplication(batch_size: int = 200, max_runtime_s: int = 50) -> dict:
+    """
+    Periodically reconciles deduplication state for Tests whose deduplication is not complete.
+    To handle concurrent runs safely, we take a row-level lock on the progress row and skip
+    already-locked rows (skip_locked=True).
+    """
+    start = time.time()
+    processed = 0
+
+    # Single read to fetch candidate Tests (with the FK preloaded for convenience).
+    tests = (
+        Test.objects
+        .filter(deduplication_complete=False)
+        .select_related("dedupe_progress")
+        .order_by("updated" if hasattr(Test, "updated") else "id")[:batch_size]
+    )
+
+    for test in tests:
+        if time.time() - start > max_runtime_s:
+            break
+
+        try:
+            prog = test.dedupe_progress
+        except TestDeduplicationProgress.DoesNotExist:
+            prog = None
+
+        if prog is None:
+            continue  # no progress row yet — a later run can create/handle it
+
+        # Strict per-item reconciliation with row lock on the progress record.
+        with transaction.atomic():
+            # Lock just this progress row; if another worker already locked it,
+            # skip it now to avoid contention and try others.
+            locked_prog = (
+                TestDeduplicationProgress.objects
+                .select_for_update(skip_locked=True)
+                .get(pk=prog.pk)
+            )
+
+            # Idempotent operation: derives state from DB, safe to run multiple times.
+            locked_prog.refresh_pending_tasks()
+            processed += 1
+    return {
+        "processed": processed,
+        "batch_size": batch_size,
+        "duration_s": round(time.time() - start, 3),
+    }

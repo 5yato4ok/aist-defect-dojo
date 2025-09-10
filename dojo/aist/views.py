@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, StreamingHttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from dojo.deduplication_tracker import TestDeduplicationProgress
+from .models import TestDeduplicationProgress
 from django.db.models import Count
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated

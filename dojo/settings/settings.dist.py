@@ -1227,6 +1227,11 @@ CELERY_BEAT_SCHEDULE = {
     #     "schedule": 0.5,  # each half of second
     #     "options": {"queue": "aist_logs"},
     # }
+    "reconcile-deduplication": {
+        "task": "dojo.aist.reconcile_deduplication",
+        "schedule": crontab(minute="*/2"),
+        "kwargs": {"batch_size": 200, "max_runtime_s": 50},
+    },
 
 }
 
