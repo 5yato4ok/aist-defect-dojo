@@ -24,7 +24,7 @@ from rest_framework import status
 from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
-from .tasks import run_sast_pipeline, send_request_to_ai
+from .tasks import run_sast_pipeline, send_request_to_ai, cleanup_containers
 from rest_framework.authentication import TokenAuthentication
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
@@ -358,7 +358,8 @@ def stop_pipeline_view(request, id: str):
     pipeline = get_object_or_404(AISTPipeline, id=id)
     with transaction.atomic():
         stop_pipeline(pipeline)
-    pipeline.save(update_fields=["status"])
+        pipeline.save(update_fields=["status"])
+    cleanup_containers.delay(id)
     return redirect("dojo_aist:pipeline_detail", id=pipeline.id)
 
 @login_required
@@ -504,7 +505,7 @@ def stream_logs_sse_redis_based(request: HttpRequest, id: str) -> HttpResponse:
     resp["X-Accel-Buffering"] = "no"    # for nginx
     return resp
 
-def pipeline_progress_json(request, id: str):
+def deduplication_progress_json(request, id: str):
     """
     Return deduplication progress for a pipeline as JSON (per Test and overall).
     Progress counts findings, not just tests with a boolean flag.
@@ -574,3 +575,27 @@ def project_meta(request, pk: int):
         "supported_languages": p.supported_languages or [],
         "versions": versions,
     })
+
+def pipeline_enrich_progress_sse(request, id: str):
+    redis = get_redis()
+    key = f"aist:progress:{id}:enrich"
+
+    def event_stream():
+        last = None
+        while True:
+            total, done = redis.hmget(key, "total", "done")
+            total = int(total or 0); done = int(done or 0)
+            payload = {"total": total, "done": done,
+                       "percent": (100 if total == 0 else int(done * 100 / total))}
+            # отправляем только при изменении
+            now = (payload["total"], payload["done"])
+            if now != last:
+                yield f"data: {json.dumps(payload)}\n\n"
+                last = now
+            # завершение
+            if total and done >= total:
+                yield "event: done\ndata: ok\n\n"
+                break
+            time.sleep(1)
+
+    return StreamingHttpResponse(event_stream(), content_type="text/event-stream")

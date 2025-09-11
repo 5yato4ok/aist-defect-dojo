@@ -13,7 +13,7 @@ import logging
 from django.utils import timezone
 from typing import Any, Dict, List
 
-from celery import shared_task, current_app, chord
+from celery import shared_task, current_app, chord, chain
 from django.conf import settings
 
 from .models import AISTPipeline, AISTStatus
@@ -27,6 +27,7 @@ from django.db.models import F, Value
 from pipeline.project_builder import configure_project_run_analyses  # type: ignore
 from pipeline.config_utils import AnalyzersConfigHelper  # type: ignore
 from pipeline.defect_dojo.repo_info import read_repo_params  # type: ignore
+from pipeline.docker_utils import cleanup_pipeline_containers # type: ignore
 from django.db import transaction, OperationalError
 from celery.exceptions import Ignore
 from dojo.models import Test, Finding, DojoMeta
@@ -37,6 +38,13 @@ from typing import Optional
 from celery import shared_task  # type: ignore
 from .models import TestDeduplicationProgress
 from .logging_transport import _install_db_logging
+
+@shared_task(bind=True)
+def report_enrich_done(self, result: int, pipeline_id: str):
+    redis = get_redis()
+    key = f"aist:progress:{pipeline_id}:enrich"
+    redis.hincrby(key, "done", 1)
+    return result
 
 @shared_task(bind=True)
 def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
@@ -178,7 +186,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         )
 
         test_ids = [t.id for t in tests]
-
         if not finding_ids:
             with transaction.atomic():
                 pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
@@ -187,11 +194,19 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
                 logger.info("No findings to enrich; Finishing pipeline")
                 pipeline.save(update_fields=["status", "updated"])
         else:
+            with transaction.atomic():
+                pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
+                pipeline.status = AISTStatus.FINDING_POSTPROCESSING
+                pipeline.save(update_fields=["status", "updated"])
+
             repo_url = getattr(repo_params, "repo_url", "") or ""
             ref = getattr(repo_params, "commit_hash", None) or getattr(repo_params, "branch_tag", None)
-
+            redis = get_redis()
+            redis.hset(f"aist:progress:{pipeline_id}:enrich", mapping={"total": len(finding_ids), "done": 0})
             header = [
-                enrich_finding_task.s(fid, repo_url, ref, trim_path)
+                chain(
+                    enrich_finding_task.s(fid, repo_url, ref, trim_path),
+                    report_enrich_done.s(pipeline_id))
                 for fid in finding_ids
             ]
             body = after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
@@ -548,7 +563,9 @@ def after_upload_enrich_and_watch(results: list[int],
         pipeline.watch_dedup_task_id = res.id
         pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
-
+@shared_task(bind=True)
+def cleanup_containers(self, pipeline_id: str) -> None:
+    cleanup_pipeline_containers(pipeline_id)
 
 @shared_task(
     name="dojo.aist.reconcile_deduplication",
