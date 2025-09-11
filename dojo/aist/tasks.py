@@ -563,9 +563,6 @@ def after_upload_enrich_and_watch(results: list[int],
         pipeline.watch_dedup_task_id = res.id
         pipeline.save(update_fields=["watch_dedup_task_id", "updated"])
 
-@shared_task(bind=True)
-def cleanup_containers(self, pipeline_id: str) -> None:
-    cleanup_pipeline_containers(pipeline_id)
 
 @shared_task(
     name="dojo.aist.reconcile_deduplication",

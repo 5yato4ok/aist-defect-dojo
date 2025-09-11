@@ -24,7 +24,7 @@ from rest_framework import status
 from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
-from .tasks import run_sast_pipeline, send_request_to_ai, cleanup_containers
+from .tasks import run_sast_pipeline, send_request_to_ai
 from rest_framework.authentication import TokenAuthentication
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
@@ -359,7 +359,7 @@ def stop_pipeline_view(request, id: str):
     with transaction.atomic():
         stop_pipeline(pipeline)
         pipeline.save(update_fields=["status"])
-    cleanup_containers.delay(id)
+
     return redirect("dojo_aist:pipeline_detail", id=pipeline.id)
 
 @login_required

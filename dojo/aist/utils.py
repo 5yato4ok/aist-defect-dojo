@@ -34,6 +34,9 @@ def _import_sast_pipeline_package():
     if pipeline_path not in sys.path:
         sys.path.append(pipeline_path)
 
+_import_sast_pipeline_package()
+from pipeline.docker_utils import cleanup_pipeline_containers # type: ignore
+
 def _load_analyzers_config():
     _import_sast_pipeline_package()
     import importlib
@@ -75,6 +78,9 @@ def stop_pipeline(pipeline: AISTPipeline) -> None:
     # Revoke both the main run task and any scheduled deduplication
     # watcher.  Clearing the task identifiers afterwards helps avoid
     # attempting to revoke them again if stop is called twice.
+
+    cleanup_pipeline_containers(pipeline.id)
+
     run_id = getattr(pipeline, "run_task_id", None)
     watch_id = getattr(pipeline, "watch_dedup_task_id", None)
     _revoke_task(run_id)
