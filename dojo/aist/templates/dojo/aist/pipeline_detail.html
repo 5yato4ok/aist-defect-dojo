@@ -286,11 +286,276 @@
                 };
             }
 
+            function hydratePushToAI(root) {
+                const scope = (root && root.querySelector) ? root : document;
+                const section = scope.querySelector('#aist-push-to-ai');
+                if (!section) return;
+
+                // data-* from inline-section
+                const productId = section.dataset.productId;
+                const pipelineId = section.dataset.pipelineId;
+                const endpointAnalyzers = section.dataset.endpointAnalyzers;
+                const endpointFindings = section.dataset.endpointFindings;
+                const endpointSend = section.dataset.endpointSend;
+
+                // Controls
+                const elLimit = section.querySelector('#aist-filter-limit');
+                const boxList = section.querySelector('#aist-filter-analyzers-boxes');
+                const btnAll = section.querySelector('#aist-analyzers-select-all');
+                const btnClear = section.querySelector('#aist-analyzers-clear');
+                const elCwe = section.querySelector('#aist-filter-cwe');
+                const elQuery = section.querySelector('#aist-filter-query');
+
+                const btnPreview = section.querySelector('#aist-btn-preview');
+                const btnSend = section.querySelector('#aist-btn-send');
+                const tblBody = section.querySelector('#aist-preview-table tbody');
+                const chkAllRows = section.querySelector('#aist-select-all');
+                const spinner = section.querySelector('#aist-preview-spinner');
+                const statusEl = section.querySelector('#aist-preview-status');
+
+
+                const parseCommaInts = (s) => (s || '').split(',').map(x => x.trim()).filter(Boolean).map(x => parseInt(x, 10)).filter(Number.isFinite);
+
+                function getJSON(url, params) {
+                    const usp = new URLSearchParams(params || {});
+                    const full = url + (usp.toString() ? '?' + usp.toString() : '');
+                    return fetch(full, {credentials: 'same-origin'}).then(r => {
+                        if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + r.statusText);
+                        return r.json();
+                    });
+                }
+
+                function getCsrfToken() {
+                    const fromInput = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value;
+                    if (fromInput) return fromInput;
+
+                    const fromMeta = document.querySelector('meta[name="csrf-token"]')?.content;
+                    if (fromMeta) return fromMeta;
+
+                    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+                    if (m) return decodeURIComponent(m[1]);
+
+                    return '';
+                }
+
+                function postJSON(url, payload) {
+                    const csrf = getCsrfToken();
+                    return fetch(url, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrf,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify(payload || {})
+                    }).then(r => {
+                        if (!r.ok) {
+                            // Для отладки полезно увидеть текст ответа с причиной CSRF
+                            return r.text().then(t => {
+                                throw new Error(`HTTP ${r.status} ${r.statusText}${t ? ` — ${t}` : ''}`);
+                            });
+                        }
+                        return r.json().catch(() => ({}));
+                    });
+                }
+
+                async function loadAnalyzers() {
+                    const data = await getJSON(endpointAnalyzers, {});
+                    const list = (data && data.analyzers) || [];
+
+                    boxList.innerHTML = '';
+                    let idx = 0;
+                    for (const item of list) {
+
+                        const value = (item && (item.key || item.slug || item.name)) || String(item);
+                        const label = (item && (item.display || item.title || item.name || item.key)) || String(item);
+                        if (!label || !label.trim()) continue;
+
+                        const id = `aist-an-${idx++}`;
+                        const wrap = document.createElement('div');
+                        wrap.className = 'form-check';
+                        const input = document.createElement('input');
+                        input.type = 'checkbox';
+                        input.className = 'form-check-input';
+                        input.id = id;
+                        input.value = value;
+                        input.checked = true;
+                        const lab = document.createElement('label');
+                        lab.className = 'form-check-label';
+                        lab.setAttribute('for', id);
+                        lab.textContent = label;
+
+                        wrap.appendChild(input);
+                        wrap.appendChild(lab);
+                        boxList.appendChild(wrap);
+                    }
+
+
+                    if (!boxList.children.length && list.length) {
+                        requestAnimationFrame(() => {
+                            if (!boxList.children.length) {
+                                let i = 0;
+                                for (const item of list) {
+                                    const value = (item && (item.key || item.slug || item.name)) || String(item);
+                                    const label = (item && (item.display || item.title || item.name || item.key)) || String(item);
+                                    if (!label || !label.trim()) continue;
+                                    const id = `aist-an-r${i++}`;
+                                    const wrap = document.createElement('div');
+                                    wrap.className = 'form-check';
+                                    const input = document.createElement('input');
+                                    input.type = 'checkbox';
+                                    input.className = 'form-check-input';
+                                    input.id = id;
+                                    input.value = value;
+                                    input.checked = true;
+                                    const lab = document.createElement('label');
+                                    lab.className = 'form-check-label';
+                                    lab.setAttribute('for', id);
+                                    lab.textContent = label;
+                                    wrap.appendChild(input);
+                                    wrap.appendChild(lab);
+                                    boxList.appendChild(wrap);
+                                }
+                            }
+                        });
+                    }
+                }
+
+                function selectedAnalyzers() {
+                    return Array.from(boxList.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+                }
+
+                function buildFindingsQueryParams() {
+                    const limit = Math.max(1, parseInt(elLimit?.value || '10', 10));
+                    const cwes = parseCommaInts(elCwe?.value);
+                    const query = (elQuery?.value || '').trim();
+                    return {
+                        product: productId,
+                        analyzers: selectedAnalyzers().join(','),
+                        cwe: cwes.join(','),
+                        query,
+                        limit: limit
+                    };
+                }
+
+                function renderRows(findings) {
+                    if (!tblBody) return;
+                    tblBody.innerHTML = '';
+                    for (const f of findings) {
+                        const tr = document.createElement('tr');
+                        tr.dataset.findingId = String(f.id);
+
+                        const tdSel = document.createElement('td');
+                        const chk = document.createElement('input');
+                        chk.type = 'checkbox';
+                        chk.className = 'aist-row-select';
+                        chk.checked = true;
+                        tdSel.appendChild(chk);
+
+                        const tdSev = document.createElement('td');
+                        tdSev.textContent = f.severity || '';
+                        const tdTitle = document.createElement('td');
+                        tdTitle.textContent = f.title || f.summary || '';
+                        const tdCwe = document.createElement('td');
+                        tdCwe.textContent = Array.isArray(f.cwe) ? f.cwe.join(', ') : (f.cwe || '');
+                        const tdAnalyzer = document.createElement('td');
+                        tdAnalyzer.textContent = f.analyzer_display || f.analyzer || '';
+                        const tdLoc = document.createElement('td');
+                        tdLoc.textContent = [f.file_path, f.line].filter(Boolean).join(':');
+                        const tdId = document.createElement('td');
+                        tdId.textContent = f.id;
+
+                        tr.append(tdSel, tdSev, tdTitle, tdCwe, tdAnalyzer, tdLoc, tdId);
+                        tblBody.appendChild(tr);
+                    }
+                }
+
+                function toggleAllSelection(checked) {
+                    section.querySelectorAll('input.aist-row-select').forEach(ch => ch.checked = !!checked);
+                }
+
+                async function refreshPreview() {
+                    const anySelected = boxList.querySelector('input[type="checkbox"]:checked');
+                    if (!anySelected) {
+                        tblBody.innerHTML = '';
+                        if (statusEl) statusEl.textContent = 'No analyzers selected.';
+                        return;
+                    }
+                    if (spinner) spinner.style.display = '';
+                    if (statusEl) statusEl.textContent = 'Loading...';
+                    try {
+                        const params = buildFindingsQueryParams();
+                        const raw = await getJSON(endpointFindings, params);
+                        const list = (raw && (raw.results || raw.findings || raw)) || [];
+                        const desired = Math.max(1, parseInt(elLimit?.value || '10', 10));
+                        const toShow = list.slice(0, desired);
+                        renderRows(toShow);
+                        if (statusEl) statusEl.textContent = `Showing ${chosen.length} of ${list.length} matching findings.`;
+                    } catch (err) {
+                        if (statusEl) statusEl.textContent = 'Failed to load findings preview.';
+                    } finally {
+                        if (spinner) spinner.style.display = 'none';
+                    }
+                }
+
+                async function sendSelectedToAI() {
+                    const ids = Array.from(section.querySelectorAll('tbody tr'))
+                        .filter(tr => tr.querySelector('.aist-row-select')?.checked)
+                        .map(tr => tr.dataset.findingId);
+                    if (!ids.length) {
+                        alert('Please select at least one finding to send.');
+                        return;
+                    }
+                    const payload = {
+                        pipeline_id: pipelineId,
+                        finding_ids: ids,
+                        filters: {
+                            limit: parseInt(elLimit?.value || '10', 10),
+                            analyzers: selectedAnalyzers(),
+                            cwe: parseCommaInts(elCwe?.value),
+                            query: (elQuery?.value || '').trim()
+                        }
+                    };
+                    if (btnSend) {
+                        btnSend.disabled = true;
+                        btnSend.textContent = 'Sending...';
+                    }
+                    try {
+                        await postJSON(endpointSend, payload);
+                    } catch (err) {
+                        console.error('Send failed:', err);
+                        alert('Failed to send to AI. See console for details.');
+                    } finally {
+                        if (btnSend) {
+                            btnSend.disabled = false;
+                            btnSend.textContent = 'Send selected to AI';
+                        }
+                    }
+                }
+
+                btnPreview && btnPreview.addEventListener('click', refreshPreview);
+                btnSend && btnSend.addEventListener('click', sendSelectedToAI);
+                chkAllRows && chkAllRows.addEventListener('change', e => toggleAllSelection(e.target.checked));
+                btnAll && btnAll.addEventListener('click', () => {
+                    boxList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+                });
+                btnClear && btnClear.addEventListener('click', () => {
+                    boxList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                });
+
+                // Первая инициализация
+                (async () => {
+                    await loadAnalyzers();
+                    await refreshPreview();
+                })();
+            }
 
             const HYDRATORS = {
                 "FINISHED": hydrateFinished,
                 "WAITING_DEDUPLICATION_TO_FINISH": hydrateWaitingDedup,
                 "FINDING_POSTPROCESSING": hydrateFindingPostprocessing,
+                "WAITING_CONFIRMATION_TO_PUSH_TO_AI": hydratePushToAI,
             };
 
             function runHydratorFor(status, root = container) {

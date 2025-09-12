@@ -24,7 +24,7 @@ from rest_framework import status
 from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
-from .tasks import run_sast_pipeline, send_request_to_ai
+from .tasks import run_sast_pipeline, push_request_to_ai
 from rest_framework.authentication import TokenAuthentication
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
@@ -156,31 +156,6 @@ def pipeline_status_stream(request, id: str):
     resp["Cache-Control"] = "no-cache"
     resp["X-Accel-Buffering"] = "no"  # важно для Nginx, чтобы не буферил стрим
     return resp
-
-def push_to_ai(request, id:str):
-    add_breadcrumb(title="Push to AI", request=request)
-
-    if not AISTPipeline.objects.filter(id=id).exists():
-        raise Http404("Pipeline not found")
-
-    logger = _install_db_logging(id)
-    if request.method == "POST":
-
-        with transaction.atomic():
-            pipeline = (
-                AISTPipeline.objects
-                .select_for_update()
-                .get(id=id)
-            )
-            if pipeline.status != AISTStatus.WAITING_CONFIRMATION_TO_PUSH_TO_AI:
-                logger.error("Attempt to push to AI before receiving confirmation")
-                return JsonResponse({"error": "Attempt to push to AI before receiving confirmation"}, status=400)
-
-            pipeline.status = AISTStatus.PUSH_TO_AI
-            pipeline.save(update_fields=["status", "updated"])
-        send_request_to_ai.delay(pipeline.id, "INFO")
-
-    return redirect('dojo_aist:pipeline_detail', id=id)
 
 
 def pipeline_set_status(request, id: str):

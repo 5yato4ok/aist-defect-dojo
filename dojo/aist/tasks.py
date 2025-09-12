@@ -241,7 +241,7 @@ def _csv(items: Iterable[Any]) -> str:
     return ", ".join(result)
 
 @shared_task(bind=True)
-def send_request_to_ai(self, pipeline_id: str, log_level) -> None:
+def push_request_to_ai(self, pipeline_id: str, finding_ids, filters, log_level="INFO") -> None:
     log = _install_db_logging(pipeline_id, log_level)
     webhook_url = getattr(
         settings,
@@ -271,7 +271,7 @@ def send_request_to_ai(self, pipeline_id: str, log_level) -> None:
 
             launch_data = pipeline.launch_data or {}
             languages = _csv(launch_data.get("languages") or [])
-            tools = _csv(launch_data.get("launched_analyzers") or [])
+            tools = _csv(filters["analyzers"] or [])
             callback_url = build_callback_url(pipeline_id)
 
             payload: Dict[str, Any] = {
@@ -279,7 +279,9 @@ def send_request_to_ai(self, pipeline_id: str, log_level) -> None:
                     "name": project_name,
                     "description": getattr(project, "description", "") or "",
                     "languages": languages,
+                    "cwe": getattr(filters, "cwe", "") or "",
                     "tools": tools,
+                    "findings": finding_ids,
                 },
                 "pipeline_id": str(pipeline.id),
                 "callback_url": callback_url,
@@ -336,12 +338,11 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
                     # Sleep for 10 seconds before checking again
                     time.sleep(3)
                     continue
-                if params.get("ask_push_to_ai", True):
-                    pipeline.status = AISTStatus.WAITING_CONFIRMATION_TO_PUSH_TO_AI
-                    pipeline.save(update_fields=["status", "updated"])
-                    return
-                else:
-                    send_request_to_ai.delay(pipeline_id=pipeline_id, log_level=log_level)
+
+                pipeline.status = AISTStatus.WAITING_CONFIRMATION_TO_PUSH_TO_AI
+                pipeline.save(update_fields=["status", "updated"])
+                return
+
     except Exception as exc:
         logger.error("Exception while waiting for deduplication to finish: %s", exc)
 

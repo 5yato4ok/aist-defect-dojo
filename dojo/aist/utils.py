@@ -175,57 +175,6 @@ def get_public_base_url(request: Optional[HttpRequest] = None) -> str:
     """
     # 1) Explicit setting
     return getattr(settings, "PUBLIC_BASE_URL", "https://157.90.113.55:8443/")
-    if base:
-        if not _is_abs_url(base):
-            # allow legacy values like 'example.com' by normalizing
-            base = "https://" + base.lstrip("/")
-        return _normalize_base_url(base)
-
-    # 2) From request (most reliable in web context)
-    if request is not None:
-        # Respect USE_X_FORWARDED_HOST if enabled
-        # settings.USE_X_FORWARDED_HOST = True
-        url = request.build_absolute_uri("/")
-        # Optionally force https if SECURE_SSL_REDIRECT=True
-        scheme = _scheme_from_settings_or_request(request)
-        p = urlsplit(url)
-        netloc = p.netloc
-        final = urlunsplit((scheme, netloc, "", "", ""))
-        return final.rstrip("/")
-
-    # 3) Django Sites
-    try:
-        site = Site.objects.get_current()
-        domain = (site.domain or "").strip().strip("/")
-        if domain:
-            # If admin accidentally stored with scheme/path — normalize
-            candidate = domain if "://" in domain else f"https://{domain}"
-            norm = _normalize_base_url(candidate)
-            if norm:
-                # Respect SECURE_SSL_REDIRECT
-                scheme = "https" if getattr(settings, "SECURE_SSL_REDIRECT", False) else urlsplit(norm).scheme or "http"
-                host = urlsplit(norm).netloc
-                return urlunsplit((scheme, host, "", "", "")).rstrip("/")
-    except Exception:
-        pass  # fall through
-
-    # 4) Service env (typical for Docker/K8s)
-    svc_host = os.getenv("DEFECTDOJO_SERVICE_HOST", "").strip()
-    if svc_host:
-        scheme = os.getenv("DEFECTDOJO_SERVICE_SCHEME", "").strip().lower() or "http"
-        port = os.getenv("DEFECTDOJO_SERVICE_PORT", "").strip() or None
-        netloc = _host_with_optional_port(scheme, svc_host, port)
-        return urlunsplit((scheme, netloc, "", "", "")).rstrip("/")
-
-    # 5) Outbound IP best-effort (last resort; useful for local dev/docker-compose)
-    try:
-        ip = _best_effort_outbound_ip()  # your existing helper
-    except Exception:
-        ip = "127.0.0.1"
-    port = str(getattr(settings, "AIST_PUBLIC_FALLBACK_PORT", 8000))
-    scheme = "http"
-    netloc = _host_with_optional_port(scheme, ip, port)
-    return urlunsplit((scheme, netloc, "", "", "")).rstrip("/")
 
 
 def build_callback_url(pipeline_id: str, request: Optional[HttpRequest] = None) -> str:
