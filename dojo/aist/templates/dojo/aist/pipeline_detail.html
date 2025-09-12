@@ -70,34 +70,100 @@
             }
 
             // ====== FINISHED hydrator (duration + JSON) ======
-            function readJson(root = document) {
-                const raw = root.querySelector?.('#aist-json-raw');
-                if (!raw) return {};
-                try {
-                    return JSON.parse((raw.textContent || 'null').trim()) || {};
-                } catch (e) {
-                    return {"_error": "Failed to parse JSON", "detail": String(e)};
-                }
-            }
 
             function jsonSyntaxHighlight(s) {
-                return s
-                    .replace(/(&|<|>)/g, m => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[m]))
-                    .replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (m) => {
-                        let cls = 'text-dark';
-                        if (/^"/.test(m)) cls = /:$/.test(m) ? 'text-secondary' : 'text-primary';
-                        else if (/true|false/.test(m)) cls = 'text-success';
-                        else if (/null/.test(m)) cls = 'text-muted';
-                        else cls = 'text-info';
-                        return '<span class="' + cls + '">' + m + '</span>';
-                    });
+                // экранируем спецсимволы
+                const esc = s.replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+
+                // inline-цвета вместо bootstrap-классов
+                return esc.replace(
+                    /("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                    (m) => {
+                        if (/^"/.test(m)) {
+                            // ключи "key":
+                            if (/:$/.test(m)) return '<span style="color:#6c757d">' + m + '</span>'; // secondary
+                            // строковые значения
+                            return '<span style="color:#0d6efd">' + m + '</span>'; // primary
+                        } else if (/true|false/.test(m)) {
+                            return '<span style="color:#198754">' + m + '</span>'; // success
+                        } else if (/null/.test(m)) {
+                            return '<span style="color:#6c757d">' + m + '</span>'; // muted
+                        }
+                        // числа
+                        return '<span style="color:#0dcaf0">' + m + '</span>'; // info
+                    }
+                );
             }
 
-            function hydrateJson(root = document) {
-                const view = root.querySelector?.('#aist-json-view');
-                if (!view) return;
-                const pretty = JSON.stringify(readJson(root) ?? {}, null, 2);
-                view.innerHTML = jsonSyntaxHighlight(pretty);
+            function hydrateAllJsonBlocks(root = document) {
+                const views = root.querySelectorAll ? root.querySelectorAll('[id^="aist-json-view-"]') : [];
+                views.forEach(view => {
+                    const id = view.id.replace('aist-json-view-', '');
+                    // размер "по контенту"
+                    view.style.display = 'inline-block';
+                    view.style.whiteSpace = 'pre';
+                    view.style.maxWidth = '100%';
+                    view.style.overflow = 'auto';
+                    view.style.minHeight = '0';
+                    view.style.maxHeight = '';
+                    view.style.height = 'auto';
+
+                    let text = (view.textContent || '').trim();
+
+                    if (!text) {
+                        const raw = root.querySelector ? root.querySelector('#aist-json-raw-' + id) : null;
+                        const rawTxt = raw ? (raw.textContent || '').trim() : '';
+                        if (rawTxt) {
+                            try {
+                                text = JSON.stringify(JSON.parse(rawTxt), null, 2);
+                            } catch {
+                                text = rawTxt;
+                            }
+                        }
+                    }
+
+                    if (!text) {
+                        view.textContent = '(empty)';
+                        return;
+                    }
+
+                    try {
+                        if (typeof jsonSyntaxHighlight === 'function') {
+                            view.innerHTML = jsonSyntaxHighlight(text);
+                        } else {
+                            view.textContent = text;
+                        }
+                    } catch {
+                        view.textContent = text;
+                    }
+                });
+
+                const copyBtns = root.querySelectorAll ? root.querySelectorAll('.aist-json-copy-btn') : [];
+                copyBtns.forEach(btn => {
+                    if (btn.dataset.wired) return;
+                    btn.addEventListener('click', async function () {
+                        const id = this.dataset.target;
+                        const pre = root.querySelector ? root.querySelector('#aist-json-view-' + id) : null;
+                        let toCopy = pre ? (pre.textContent || '').trim() : '';
+
+                        if (!toCopy) {
+                            const raw = root.querySelector ? root.querySelector('#aist-json-raw-' + id) : null;
+                            toCopy = raw ? (raw.textContent || '').trim() : '';
+                        }
+
+                        try {
+                            await navigator.clipboard.writeText(toCopy || '{}');
+                            this.innerHTML = '<i class="fa fa-check me-1"></i>Copied';
+                            setTimeout(() => this.innerHTML = '<i class="fa fa-clipboard me-1"></i>Copy', 1500);
+                        } catch {
+                            this.innerHTML = '<i class="fa fa-exclamation-triangle me-1"></i>Error';
+                            setTimeout(() => this.innerHTML = '<i class="fa fa-clipboard me-1"></i>Copy', 1500);
+                        }
+                    });
+                    btn.dataset.wired = '1';
+                });
             }
 
             function hydrateDuration(root = document) {
@@ -160,7 +226,7 @@
 
             function hydrateFinished(root = document) {
                 hydrateDuration(root);
-                hydrateJson(root);
+                hydrateAllJsonBlocks(root);
                 wireJsonButtons(root);
             }
 
@@ -621,6 +687,24 @@
                 runHydratorFor(s, document);
                 srcStatus.close();
             });
+
+            document.getElementById('aist-ai-responses')?.addEventListener('shown.bs.collapse', function (ev) {
+                hydrateAllJsonBlocks(ev.target);
+            });
+            if (window.jQuery) {
+                jQuery('#aist-ai-responses').on('shown.bs.collapse', function (ev) {
+                    hydrateAllJsonBlocks(ev.target);
+                });
+            }
+
+            var v = document.getElementById('aist-json-view-{{ r.id }}');
+            if (!v) return;
+            if (typeof window.jsonSyntaxHighlight === 'function') {
+                try {
+                    v.innerHTML = window.jsonSyntaxHighlight(v.textContent);
+                } catch (e) {
+                }
+            }
 
             srcStatus.onerror = () => {
             };

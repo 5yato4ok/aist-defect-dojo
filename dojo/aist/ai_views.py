@@ -7,9 +7,15 @@ from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbid
 from django.utils.text import slugify
 from django.db import transaction
 from django.views.decorators.http import require_GET, require_POST
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404, redirect
+from rest_framework import status
 
 from dojo.models import Finding, Test, Test_Type, Product
-from .models import AISTPipeline, AISTProject, AISTStatus
+from .models import AISTPipeline, AISTProject, AISTStatus, AISTAIResponse
 from .tasks import push_request_to_ai
 from .logging_transport import _install_db_logging
 
@@ -205,4 +211,39 @@ def send_request_to_ai(request, pipeline_id: str):
         return JsonResponse({"ok": False, "error": str(exc)}, status=500)
 
     return JsonResponse({"ok": True, "count": len(found_ids)})
+
+@login_required
+@require_POST
+def delete_ai_response(request, pipeline_id: str, response_id: int):
+    pipeline = get_object_or_404(AISTPipeline, id=pipeline_id)
+    resp = get_object_or_404(pipeline.ai_responses, id=response_id)
+    resp.delete()
+    return redirect('dojo_aist:pipeline_detail', id=pipeline.id)
+
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def pipeline_callback(request, id: str):
+    try:
+        get_object_or_404(AISTPipeline, id=id)
+        response_from_ai = request.data
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    errors = response_from_ai.pop("errors", None)
+    logger = _install_db_logging(id)
+    if errors:
+        logger.error(errors)
+
+    with transaction.atomic():
+        pipeline = (
+            AISTPipeline.objects
+            .select_for_update()
+            .get(id=id)
+        )
+        AISTAIResponse.objects.create(pipeline=pipeline, payload=response_from_ai)
+        pipeline.status = AISTStatus.FINISHED
+        pipeline.save(update_fields=["status", "updated"])
+
+    return Response({"ok": True})
 

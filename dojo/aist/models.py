@@ -176,3 +176,20 @@ class ProcessedFinding(models.Model):
                 fields=["test", "finding"], name="uniq_test_finding_processed"
             )
         ]
+
+class AISTAIResponse(models.Model):
+
+    pipeline = models.ForeignKey(
+        'AISTPipeline',
+        on_delete=models.CASCADE,
+        related_name='ai_responses',
+        db_index=True,
+    )
+    created = models.DateTimeField(auto_now_add=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-created']  # last one is on top
+
+    def __str__(self):
+        return f"AIResponse[{self.pipeline_id}] @ {self.created:%Y-%m-%d %H:%M:%S}"

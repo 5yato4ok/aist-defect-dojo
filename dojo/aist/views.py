@@ -9,23 +9,19 @@ from django.db.models import Q
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import HttpResponse, StreamingHttpResponse, HttpResponseForbidden, Http404
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
-from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, StreamingHttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from .models import TestDeduplicationProgress
 from django.db.models import Count
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
+
+
 from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
-from .tasks import run_sast_pipeline, push_request_to_ai
-from rest_framework.authentication import TokenAuthentication
+from .tasks import run_sast_pipeline
+
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
 
@@ -66,33 +62,6 @@ def aist_default_analyzers(request):
         "defaults": defaults,
         "signature": _signature(project_id, langs_union, time_class),
     })
-
-@api_view(["POST"])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
-def pipeline_callback(request, id: str):
-    try:
-        get_object_or_404(AISTPipeline, id=id)
-        response_from_ai = request.data
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    errors = response_from_ai.pop("errors", None)
-    logger = _install_db_logging(id)
-    if errors:
-        logger.error(errors)
-
-    with transaction.atomic():
-        pipeline = (
-            AISTPipeline.objects
-            .select_for_update()
-            .get(id=id)
-        )
-        pipeline.response_from_ai = response_from_ai
-        pipeline.status = AISTStatus.FINISHED
-        pipeline.save(update_fields=["status", "response_from_ai", "updated"])
-
-    return Response({"ok": True})
 
 def pipeline_status_stream(request, id: str):
     """
