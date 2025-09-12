@@ -549,7 +549,6 @@
                         return;
                     }
                     if (spinner) spinner.style.display = '';
-                    if (statusEl) statusEl.textContent = 'Loading...';
                     try {
                         const params = buildFindingsQueryParams();
                         const raw = await getJSON(endpointFindings, params);
@@ -557,9 +556,9 @@
                         const desired = Math.max(1, parseInt(elLimit?.value || '10', 10));
                         const toShow = list.slice(0, desired);
                         renderRows(toShow);
+                        {# TODO: fix, not showed #}
                         if (statusEl) statusEl.textContent = `Showing ${chosen.length} of ${list.length} matching findings.`;
                     } catch (err) {
-                        if (statusEl) statusEl.textContent = 'Failed to load findings preview.';
                     } finally {
                         if (spinner) spinner.style.display = 'none';
                     }
