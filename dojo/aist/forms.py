@@ -108,7 +108,7 @@ class AISTPipelineRunForm(forms.Form):
             # from project model (immutable in the form)
             project_name=proj.product.name,
             script_path=proj.script_path,
-            project_version=(pv.id if pv else None),
+            project_version=(pv.version if pv else None),
             supported_languages=proj.supported_languages,
             # from user options
             rebuild_images=self.cleaned_data.get("rebuild_images") or False,
