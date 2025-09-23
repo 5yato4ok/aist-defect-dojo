@@ -520,26 +520,46 @@ def project_meta(request, pk: int):
         "versions": versions,
     })
 
+@csrf_exempt
+@require_http_methods(["GET"])
 def pipeline_enrich_progress_sse(request, id: str):
     redis = get_redis()
     key = f"aist:progress:{id}:enrich"
 
     def event_stream():
         last = None
+        last_ping = time.monotonic()
         while True:
-            total, done = redis.hmget(key, "total", "done")
-            total = int(total or 0); done = int(done or 0)
-            payload = {"total": total, "done": done,
-                       "percent": (100 if total == 0 else int(done * 100 / total))}
-            # отправляем только при изменении
+            try:
+                total, done = redis.hmget(key, "total", "done")
+            except Exception:
+                total, done = 0, 0
+            total = int(total or 0)
+            done = int(done or 0)
+
+            payload = {
+                "total": total,
+                "done": done,
+                "percent": (100 if total == 0 else int(done * 100 / total)),
+            }
+
             now = (payload["total"], payload["done"])
             if now != last:
                 yield f"data: {json.dumps(payload)}\n\n"
                 last = now
-            # завершение
+
+            # heartbeat so proxy doesn't close connection
+            if time.monotonic() - last_ping > 25:
+                yield ": ping\n\n"
+                last_ping = time.monotonic()
+
             if total and done >= total:
                 yield "event: done\ndata: ok\n\n"
                 break
+
             time.sleep(1)
 
-    return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"
+    return resp
