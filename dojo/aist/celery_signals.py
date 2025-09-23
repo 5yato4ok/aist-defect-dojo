@@ -3,7 +3,7 @@ from __future__ import annotations
 from celery.signals import worker_process_init
 from .logging_transport import install_global_redis_log_handler
 
-from django.db import models, transaction
+from django.db import models, transaction, IntegrityError
 from django.db.models import F
 from django.db.models.signals import post_save, post_delete
 from django.utils import timezone
@@ -28,23 +28,43 @@ def on_finding_deduplicated(sender, finding_id=None, test=None, **kwargs):
     - reduce DeduplicationTaskGroup's pending_tasks
     - on 0 set completed
     """
+    # Nothing to do if finding_id is missing
     if not finding_id:
         return
+
+    # Prefer to extract test_id from the provided test object
     test_id = getattr(test, "id", None)
+
+    # If test_id is not known (e.g. signal was sent without test),
+    # try to find it via an existing ProcessedFinding
     if not test_id:
-        try:
-            test_id = Finding.objects.only("test_id").get(pk=finding_id).test_id
-        except Finding.DoesNotExist:
-            return
-    _, created = ProcessedFinding.objects.get_or_create(
-        test_id=test_id, finding_id=finding_id
-    )
-    if not created:
+        pf = ProcessedFinding.objects.filter(finding_id=finding_id).first()
+        if pf:
+            test_id = pf.test_id
+
+    # If test_id is still not defined – exit
+    if not test_id:
         return
-    # Atomically decrement the pending count if positive
-    TestDeduplicationProgress.objects.filter(
-        test_id=test_id, pending_tasks__gt=0
-    ).update(pending_tasks=F("pending_tasks") - 1)
+
+    # Try to create ProcessedFinding; if finding was already deleted,
+    # catch IntegrityError and continue anyway
+    created = False
+    try:
+        _, created = ProcessedFinding.objects.get_or_create(
+            test_id=test_id,
+            finding_id=finding_id,
+        )
+    except IntegrityError:
+        # The finding may have been deleted, ignore the error
+        pass
+
+    # Decrease pending_tasks only if ProcessedFinding was created
+    if created:
+        TestDeduplicationProgress.objects.filter(
+            test_id=test_id, pending_tasks__gt=0
+        ).update(pending_tasks=F("pending_tasks") - 1)
+
+    # Always recalculate pending_tasks, even if we couldn’t create a record
     try:
         group = TestDeduplicationProgress.objects.get(test_id=test_id)
     except TestDeduplicationProgress.DoesNotExist:
