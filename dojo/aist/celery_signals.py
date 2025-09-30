@@ -32,6 +32,11 @@ def on_finding_deduplicated(sender, finding_id=None, test=None, **kwargs):
     if not test_id:
         return
 
+    ProcessedFinding.objects.get_or_create(
+        test_id=test_id,
+        finding_id=finding_id,
+    )
+
     def do_refresh():
         try:
             group = TestDeduplicationProgress.objects.get(test_id=test_id)
@@ -89,8 +94,9 @@ def refresh_on_finding_delete(sender, instance, **kwargs):
     Deleted findings should no longer contribute to the total number of tasks.
     """
     test_id = instance.test_id
-    if not test_id:
+    if not test_id or not Test.objects.filter(id=test_id).exists():
         return
+
     def do_refresh():
         try:
             group = TestDeduplicationProgress.objects.get(test_id=test_id)
