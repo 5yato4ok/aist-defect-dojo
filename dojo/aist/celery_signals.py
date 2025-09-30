@@ -22,12 +22,6 @@ def setup_logging_on_worker(**kwargs):
 
 @receiver(finding_deduplicated)
 def on_finding_deduplicated(sender, finding_id=None, test=None, **kwargs):
-    """
-    Reaction on finishing of deduplication of concrete finding
-    - set finding as considered
-    - reduce DeduplicationTaskGroup's pending_tasks
-    - on 0 set completed
-    """
     # Nothing to do if finding_id is missing
     if not finding_id:
         return
@@ -35,42 +29,17 @@ def on_finding_deduplicated(sender, finding_id=None, test=None, **kwargs):
     # Prefer to extract test_id from the provided test object
     test_id = getattr(test, "id", None)
 
-    # If test_id is not known (e.g. signal was sent without test),
-    # try to find it via an existing ProcessedFinding
-    if not test_id:
-        pf = ProcessedFinding.objects.filter(finding_id=finding_id).first()
-        if pf:
-            test_id = pf.test_id
-
-    # If test_id is still not defined – exit
     if not test_id:
         return
 
-    # Try to create ProcessedFinding; if finding was already deleted,
-    # catch IntegrityError and continue anyway
-    created = False
-    try:
-        _, created = ProcessedFinding.objects.get_or_create(
-            test_id=test_id,
-            finding_id=finding_id,
-        )
-    except IntegrityError:
-        # The finding may have been deleted, ignore the error
-        pass
+    def do_refresh():
+        try:
+            group = TestDeduplicationProgress.objects.get(test_id=test_id)
+        except TestDeduplicationProgress.DoesNotExist:
+            return
+        group.refresh_pending_tasks()
 
-    # Decrease pending_tasks only if ProcessedFinding was created
-    if created:
-        TestDeduplicationProgress.objects.filter(
-            test_id=test_id, pending_tasks__gt=0
-        ).update(pending_tasks=F("pending_tasks") - 1)
-
-    # Always recalculate pending_tasks, even if we couldn’t create a record
-    try:
-        group = TestDeduplicationProgress.objects.get(test_id=test_id)
-    except TestDeduplicationProgress.DoesNotExist:
-        return
-    group.refresh_pending_tasks()
-
+    transaction.on_commit(do_refresh)
 
 # Additional signals to manage dynamic refresh of pending tasks
 
@@ -85,9 +54,13 @@ def create_dedup_group_on_test_save(sender, instance, created, **kwargs):
     triggered via bulk operations (e.g. updating fields) so we refresh
     the counters to stay in sync.
     """
-    group, _ = TestDeduplicationProgress.objects.get_or_create(test=instance)
-    # Always recompute pending tasks to pick up any missing or newly added findings.
-    group.refresh_pending_tasks()
+
+    def do_refresh():
+        group, _ = TestDeduplicationProgress.objects.get_or_create(test=instance)
+        # Always recompute pending tasks to pick up any missing or newly added findings.
+        group.refresh_pending_tasks()
+
+    transaction.on_commit(do_refresh)
 
 
 @receiver(post_save, sender=Finding)
@@ -101,9 +74,11 @@ def refresh_on_finding_save(sender, instance, created, **kwargs):
     test_id = instance.test_id
     if not test_id:
         return
-    # Ensure a DeduplicationTaskGroup exists for the test
-    group, _ = TestDeduplicationProgress.objects.get_or_create(test_id=test_id)
-    group.refresh_pending_tasks()
+    def do_refresh():
+        group, _ = TestDeduplicationProgress.objects.get_or_create(test_id=test_id)
+        group.refresh_pending_tasks()
+
+    transaction.on_commit(do_refresh)
 
 
 @receiver(post_delete, sender=Finding)
@@ -116,8 +91,11 @@ def refresh_on_finding_delete(sender, instance, **kwargs):
     test_id = instance.test_id
     if not test_id:
         return
-    try:
-        group = TestDeduplicationProgress.objects.get(test_id=test_id)
-    except TestDeduplicationProgress.DoesNotExist:
-        return
-    group.refresh_pending_tasks()
+    def do_refresh():
+        try:
+            group = TestDeduplicationProgress.objects.get(test_id=test_id)
+        except TestDeduplicationProgress.DoesNotExist:
+            return
+        group.refresh_pending_tasks()
+
+    transaction.on_commit(do_refresh)

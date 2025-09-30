@@ -1,5 +1,5 @@
 from __future__ import annotations
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from dojo.models import Test, Product, Finding
 
@@ -112,69 +112,64 @@ class TestDeduplicationProgress(models.Model):
             self.save(update_fields=["deduplication_complete", "completed_at"])
 
     def refresh_pending_tasks(self) -> None:
-        """
-        Recalculate the outstanding deduplication tasks for this group.
+        if not Test.objects.filter(id=self.test_id).exists():
+            return
 
-        The number of pending tasks is defined as the difference between the
-        total number of findings belonging to the test and the number of
-        findings that have already been processed (a record exists in
-        ``ProcessedFinding``). Only findings that currently exist are
-        considered; if a finding is deleted its corresponding processed
-        record is effectively ignored when counting.
-
-        This method also updates ``deduplication_complete`` and
-        ``completed_at`` accordingly and synchronises the state back onto
-        the ``Test``. ``started_at`` will be set if it has not yet been
-        initialised. It is safe to call this method at any time as it
-        always sets the counters based on the current database state.
-        """
-        test_id = self.test_id
-        total_findings = Finding.objects.filter(test_id=test_id).count()
-        existing_finding_ids = Finding.objects.filter(test_id=test_id).values_list(
-            "id", flat=True
-        )
-        processed_count = ProcessedFinding.objects.filter(
-            test_id=test_id, finding_id__in=existing_finding_ids
-        ).count()
-        pending = max(total_findings - processed_count, 0)
-        updated_fields = []
-        if self.pending_tasks != pending:
-            self.pending_tasks = pending
-            updated_fields.append("pending_tasks")
-        if self.started_at is None:
-            self.started_at = timezone.now()
-            updated_fields.append("started_at")
-        completed_now = (pending == 0)
-        if completed_now and not self.deduplication_complete:
-            self.deduplication_complete = True
-            self.completed_at = timezone.now()
-            updated_fields.extend(["deduplication_complete", "completed_at"])
-        elif not completed_now and self.deduplication_complete:
-            self.deduplication_complete = False
-            self.completed_at = None
-            updated_fields.extend(["deduplication_complete", "completed_at"])
-        if updated_fields:
-            self.save(update_fields=updated_fields)
-        if completed_now:
-            Test.objects.filter(pk=test_id, deduplication_complete=False).update(
-                deduplication_complete=True
+        with transaction.atomic():
+            group = (
+                TestDeduplicationProgress.objects
+                .select_for_update()
+                .get(pk=self.pk)
             )
-        else:
-            Test.objects.filter(pk=test_id, deduplication_complete=True).update(
-                deduplication_complete=False
+            # test current findings
+            qs_findings = Finding.objects.filter(test_id=group.test_id)
+
+            # pending = findings, for which ProcessedFinding doesn't exist with same test_id and finding_id
+            pending_qs = qs_findings.filter(
+                ~models.Exists(
+                    ProcessedFinding.objects.filter(
+                        test_id=group.test_id,
+                        finding_id=models.OuterRef('id'),
+                    )
+                )
+            )
+
+            pending = pending_qs.count()
+            # completed if pending == 0 (even if 0/0)
+            is_complete = (pending == 0)
+
+            fields_to_update = []
+            if group.pending_tasks != pending:
+                group.pending_tasks = pending
+                fields_to_update.append("pending_tasks")
+            if group.deduplication_complete != is_complete:
+                group.deduplication_complete = is_complete
+                fields_to_update.append("deduplication_complete")
+
+            if fields_to_update:
+                group.save(update_fields=fields_to_update)
+            Test.objects.filter(id=group.test_id).update(
+                deduplication_complete=is_complete
             )
 
 
 class ProcessedFinding(models.Model):
     """Set which findings are considered to avoid double decrement"""
     test = models.ForeignKey(Test, on_delete=models.CASCADE)
-    finding = models.ForeignKey(Finding, on_delete=models.CASCADE)
+    finding = models.ForeignKey(Finding, null=True, blank=True,
+                                on_delete=models.SET_NULL)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["test", "finding"], name="uniq_test_finding_processed"
-            )
+                fields=["test", "finding"],
+                name="uniq_processed_test_finding_not_null",
+                condition=models.Q(finding__isnull=False),
+            ),
+        ]
+        indexes = [
+            # to anti JOIN work fast
+            models.Index(fields=["test", "finding"]),
         ]
 
 class AISTAIResponse(models.Model):

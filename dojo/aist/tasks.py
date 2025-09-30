@@ -319,7 +319,7 @@ def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
     pipeline = AISTPipeline.objects.get(id=pipeline_id)
 
     logger = _install_db_logging(pipeline_id, log_level)
-    if not pipeline.tests:
+    if not pipeline.tests.exists():
         pipeline.status = AISTStatus.FINISHED
         pipeline.save(update_fields=['status', 'updated'])
         logger.warning("No tests to wait")
