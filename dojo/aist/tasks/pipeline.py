@@ -2,13 +2,14 @@ import os
 from django.conf import settings
 from django.utils import timezone
 from dojo.aist.utils import _import_sast_pipeline_package
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from celery import shared_task, chord, chain
 from django.db import transaction, OperationalError
 from dojo.models import Test, Finding
 from dojo.aist.models import AISTPipeline, AISTStatus
+
 from dojo.aist.logging_transport import get_redis, _install_db_logging
-from .enrich import enrich_finding_task, report_enrich_done, after_upload_enrich_and_watch
+from .enrich import make_enrich_chord
 
 _import_sast_pipeline_package()
 
@@ -177,15 +178,17 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             ref = getattr(repo_params, "commit_hash", None) or getattr(repo_params, "branch_tag", None)
             redis = get_redis()
             redis.hset(f"aist:progress:{pipeline_id}:enrich", mapping={"total": len(finding_ids), "done": 0})
-            header = [
-                chain(
-                    enrich_finding_task.s(fid, repo_url, ref, trim_path),
-                    report_enrich_done.s(pipeline_id))
-                for fid in finding_ids
-            ]
-            body = after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
-            sig = chord(header, body)
-
+            sig = make_enrich_chord(
+                app=self.app,
+                finding_ids=finding_ids,
+                repo_url=repo_url,
+                ref=ref,
+                trim_path=trim_path,
+                pipeline_id=pipeline_id,
+                test_ids=test_ids,
+                log_level=log_level,
+                params=params,
+            )
             raise self.replace(sig)
     except Ignore:
         raise

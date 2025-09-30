@@ -112,9 +112,6 @@ class TestDeduplicationProgress(models.Model):
             self.save(update_fields=["deduplication_complete", "completed_at"])
 
     def refresh_pending_tasks(self) -> None:
-        if not Test.objects.filter(id=self.test_id).exists():
-            return
-
         with transaction.atomic():
             group = (
                 TestDeduplicationProgress.objects

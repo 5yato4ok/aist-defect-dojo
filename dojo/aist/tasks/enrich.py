@@ -1,4 +1,5 @@
 import requests
+import os
 from dojo.models import Test, Finding, DojoMeta
 from celery import shared_task, current_app, chord, chain
 from dojo.aist.logging_transport import get_redis
@@ -7,7 +8,7 @@ from dojo.aist.logging_transport import get_redis, _install_db_logging
 from django.db import transaction
 from dojo.aist.models import AISTPipeline, AISTStatus
 from .dedup import watch_deduplication
-
+from math import ceil
 
 class LinkBuilder:
     """Build source links for GitHub/GitLab/Bitbucket; verify remote file existence (handles 429)."""
@@ -159,3 +160,82 @@ def enrich_finding_task(
         return 0
     except Exception as e:
         return 0
+
+@shared_task(bind=False)
+def enrich_finding_batch(
+    finding_ids: list[int],
+    repo_url: str,
+    ref: Optional[str],
+    trim_path: str,
+) -> int:
+    processed = 0
+    for fid in finding_ids:
+        try:
+            processed += int(enrich_finding_task.run(fid, repo_url, ref, trim_path) or 0)
+        except Exception:
+            continue
+    return processed
+
+def make_enrich_chord(
+    *,
+    app,
+    finding_ids: List[int],
+    repo_url: str,
+    ref: Optional[str],
+    trim_path: str,
+    pipeline_id: str,
+    test_ids: List[int],
+    log_level: str,
+    params: dict,
+    default_workers_env: str = "AIST_ENRICH_WORKERS",
+):
+    """
+    Build a Celery chord that:
+      1) splits findings into K chunks (K ~= number of active workers),
+      2) runs one batch task per chunk,
+      3) increments progress by the processed count per chunk,
+      4) aggregates results in the chord body.
+
+    Returns:
+        celery.canvas.Signature: A chord signature ready to dispatch/replace.
+    """
+
+    # 1) Determine available parallelism = number of active workers.
+    #    If inspect is unavailable, fall back to env var AIST_ENRICH_WORKERS (default 4).
+    try:
+        insp = app.control.inspect()
+        active = insp.active() or {}
+        workers = max(1, len(active))
+    except Exception:
+        workers = int(os.getenv(default_workers_env, "4"))
+
+    # Edge case: no findings -> return body-only path (caller's code can skip).
+    total = len(finding_ids)
+    if total == 0:
+        return after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
+
+    # 2) Compute number of chunks and perform the split.
+    #    We never create more chunks than findings or workers.
+    k = max(1, min(workers, total))
+    chunk_size = ceil(total / k)
+    chunks = [finding_ids[i : i + chunk_size] for i in range(0, total, chunk_size)]
+
+    # 3) Initialize progress in Redis (total = number of findings, done = 0).
+    #    report_enrich_done will HINCRBY "done" by the processed count for each chunk.
+    redis = get_redis()
+    redis.hset(f"aist:progress:{pipeline_id}:enrich", mapping={"total": total, "done": 0})
+
+    # 4) Build the chord header: one batch chain per chunk.
+    header = [
+        chain(
+            enrich_finding_batch.s(chunk, repo_url, ref, trim_path),
+            report_enrich_done.s(pipeline_id),
+        )
+        for chunk in chunks
+    ]
+
+    # 5) Build the chord body, which already sums the batch results and continues the pipeline.
+    body = after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
+
+    # 6) Return the chord signature. The caller can `raise self.replace(sig)`.
+    return chord(header, body)
