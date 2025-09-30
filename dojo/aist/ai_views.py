@@ -16,7 +16,7 @@ from rest_framework import status
 
 from dojo.models import Finding, Test, Test_Type, Product
 from .models import AISTPipeline, AISTProject, AISTStatus, AISTAIResponse
-from .tasks import push_request_to_ai
+from dojo.aist.tasks import push_request_to_ai
 from .logging_transport import _install_db_logging
 
 

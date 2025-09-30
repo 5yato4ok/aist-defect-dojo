@@ -20,7 +20,7 @@ from django.db.models import Count
 from dojo.utils import add_breadcrumb
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponseBadRequest
-from .tasks import run_sast_pipeline
+from dojo.aist.tasks import run_sast_pipeline
 
 from .forms import AISTPipelineRunForm , _load_analyzers_config, _signature # type: ignore
 
