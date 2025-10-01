@@ -179,7 +179,6 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             redis = get_redis()
             redis.hset(f"aist:progress:{pipeline_id}:enrich", mapping={"total": len(finding_ids), "done": 0})
             sig = make_enrich_chord(
-                app=self.app,
                 finding_ids=finding_ids,
                 repo_url=repo_url,
                 ref=ref,

@@ -1,4 +1,5 @@
 import requests
+from celery import current_app
 import os
 from dojo.models import Test, Finding, DojoMeta
 from celery import shared_task, current_app, chord, chain
@@ -9,7 +10,6 @@ from django.db import transaction
 from dojo.aist.models import AISTPipeline, AISTStatus
 from .dedup import watch_deduplication
 from math import ceil
-
 class LinkBuilder:
     """Build source links for GitHub/GitLab/Bitbucket; verify remote file existence (handles 429)."""
     @staticmethod
@@ -178,7 +178,6 @@ def enrich_finding_batch(
 
 def make_enrich_chord(
     *,
-    app,
     finding_ids: List[int],
     repo_url: str,
     ref: Optional[str],
@@ -187,7 +186,6 @@ def make_enrich_chord(
     test_ids: List[int],
     log_level: str,
     params: dict,
-    default_workers_env: str = "AIST_ENRICH_WORKERS",
 ):
     """
     Build a Celery chord that:
@@ -200,14 +198,9 @@ def make_enrich_chord(
         celery.canvas.Signature: A chord signature ready to dispatch/replace.
     """
 
-    # 1) Determine available parallelism = number of active workers.
-    #    If inspect is unavailable, fall back to env var AIST_ENRICH_WORKERS (default 4).
-    try:
-        insp = app.control.inspect()
-        active = insp.active() or {}
-        workers = max(1, len(active))
-    except Exception:
-        workers = int(os.getenv(default_workers_env, "4"))
+    workers = int(os.getenv("DD_CELERY_WORKER_AUTOSCALE_MAX", "4") or 4)
+    logger = _install_db_logging(pipeline_id, log_level)
+    logger.info(f"Number of workers for enrichment available: {workers}")
 
     # Edge case: no findings -> return body-only path (caller's code can skip).
     total = len(finding_ids)
