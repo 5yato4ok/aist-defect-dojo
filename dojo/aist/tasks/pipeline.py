@@ -34,13 +34,16 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
     :param pipeline_id: Primary key of the :class:`AISTPipeline` instance.
     :param params: Dictionary of parameters collected from the form.
     """
-
     def get_param(key: str, default: Any) -> Any:
         value = params.get(key)
         return value if value not in (None, "", []) else default
 
     log_level = get_param("log_level", "INFO")
     logger = _install_db_logging(pipeline_id, log_level)
+
+    if params is None:
+        logger.info("Launch via API. Need to add default parameters for project")
+        return
 
     pipeline = None
 
