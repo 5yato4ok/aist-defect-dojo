@@ -20,6 +20,16 @@ from pipeline.docker_utils import cleanup_pipeline_containers # type: ignore
 from dojo.aist.internal_upload import upload_results_internal
 from celery.exceptions import Ignore
 
+def fill_default_project_parameters():
+    # project version
+    # project_supported_languages = project.supported_languages
+    # rebuild_images = False
+    # analyzers = default list of analyzers
+    # time_class_level = ""
+    # project_name
+    # script path
+    #
+    pass
 
 @shared_task(bind=True)
 def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
@@ -68,22 +78,21 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
             project = pipeline.project
             project_name = project.product.name if project else None
-            project_version = pipeline.project_version.version if pipeline.project_version else None
+            project_version = pipeline.project_version.version if pipeline.project_version else None # ???
             project_supported_languages = project.supported_languages if project else []
 
         analyzers_helper = AnalyzersConfigHelper()
-
-        aist_path = getattr(settings, "AIST_OUTPUT_PATH", os.path.join("/tmp", "aist", "output"))
-        output_dir =  os.path.join(aist_path, project_name or "project")
         languages = get_param("languages", [])
         if isinstance(languages, str):
             languages = [languages]
         languages = list(set(languages + project_supported_languages))
         project_version = get_param("project_version", project_version)
+        aist_path = getattr(settings, "AIST_OUTPUT_PATH", os.path.join("/tmp", "aist", "output"))
+        output_dir =  os.path.join(aist_path, project_name or "project", project_version or "default")
         rebuild_images = bool(get_param("rebuild_images", False))
         analyzers = get_param("analyzers", [])
-        time_class_level = get_param("time_class_level", "")
-        dojo_product_name = get_param("dojo_product_name", project_name or None)
+        time_class_level = get_param("time_class_level", "") # FIXME: if analyzer is from slower time class it will be skipped
+        dojo_product_name = get_param("dojo_product_name", project_name or None) # ???
 
         pipeline_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
         script_path = get_param("script_path", None)

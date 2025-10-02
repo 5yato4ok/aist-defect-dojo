@@ -218,7 +218,7 @@ api_v2_urls = [
     #  Django Rest Framework API v2
     re_path(r"^{}api/v2/".format(get_system_setting("url_prefix")), include(v2_api.urls)),
     re_path(r"^{}api/v2/user_profile/".format(get_system_setting("url_prefix")), UserProfileView.as_view(), name="user_profile"),
-    re_path(r"^{}api/v2/aist/".format(get_system_setting("url_prefix")), include("dojo.aist.api_urls", 'dojo.aist'),
+    re_path(r"^{}api/v2/aist/".format(get_system_setting("url_prefix")), include("dojo.aist.api_urls", 'dojo_aist_api'),
             name='aist'),
 ]
 
