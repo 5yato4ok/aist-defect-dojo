@@ -84,8 +84,7 @@ def report_enrich_done(self, result: int, pipeline_id: str):
 def after_upload_enrich_and_watch(results: list[int],
                                   pipeline_id: str,
                                   test_ids: list[int],
-                                  log_level,
-                                  params) -> None:
+                                  log_level) -> None:
     logger = _install_db_logging(pipeline_id, log_level)
     enriched = sum(int(v or 0) for v in results)
 
@@ -100,7 +99,7 @@ def after_upload_enrich_and_watch(results: list[int],
         pipeline.save(update_fields=["status", "updated"])
 
     logger.info("Enrichment finished: %s findings enriched. Waiting for deduplication.", enriched)
-    res = watch_deduplication.delay(pipeline_id=pipeline_id, log_level=log_level, params=params)
+    res = watch_deduplication.delay(pipeline_id=pipeline_id, log_level=log_level)
 
     with transaction.atomic():
         pipeline.watch_dedup_task_id = res.id
@@ -184,8 +183,7 @@ def make_enrich_chord(
     trim_path: str,
     pipeline_id: str,
     test_ids: List[int],
-    log_level: str,
-    params: dict,
+    log_level: str
 ):
     """
     Build a Celery chord that:
@@ -205,7 +203,7 @@ def make_enrich_chord(
     # Edge case: no findings -> return body-only path (caller's code can skip).
     total = len(finding_ids)
     if total == 0:
-        return after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
+        return after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level)
 
     # 2) Compute number of chunks and perform the split.
     #    We never create more chunks than findings or workers.
@@ -228,7 +226,7 @@ def make_enrich_chord(
     ]
 
     # 5) Build the chord body, which already sums the batch results and continues the pipeline.
-    body = after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level, params)
+    body = after_upload_enrich_and_watch.s(pipeline_id, test_ids, log_level)
 
     # 6) Return the chord signature. The caller can `raise self.replace(sig)`.
     return chord(header, body)

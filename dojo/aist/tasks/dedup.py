@@ -6,7 +6,7 @@ from django.db import transaction, OperationalError
 from dojo.models import Test
 
 @shared_task(bind=True)
-def watch_deduplication(self, pipeline_id: str, log_level, params) -> None:
+def watch_deduplication(self, pipeline_id: str, log_level) -> None:
     """Monitor deduplication progress and finalise the pipeline.
 
     This task polls the ``Test`` model to determine when all imported

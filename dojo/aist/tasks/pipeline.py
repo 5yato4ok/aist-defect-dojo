@@ -10,6 +10,7 @@ from dojo.aist.models import AISTPipeline, AISTStatus
 
 from dojo.aist.logging_transport import get_redis, _install_db_logging
 from .enrich import make_enrich_chord
+from dojo.aist.pipeline_args import PipelineArguments
 
 _import_sast_pipeline_package()
 
@@ -20,19 +21,9 @@ from pipeline.docker_utils import cleanup_pipeline_containers # type: ignore
 from dojo.aist.internal_upload import upload_results_internal
 from celery.exceptions import Ignore
 
-def fill_default_project_parameters():
-    # project version
-    # project_supported_languages = project.supported_languages
-    # rebuild_images = False
-    # analyzers = default list of analyzers
-    # time_class_level = ""
-    # project_name
-    # script path
-    #
-    pass
 
 @shared_task(bind=True)
-def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
+def run_sast_pipeline(self, pipeline_id: str, params: dict) -> None:
     """
     Execute a SAST pipeline asynchronously.
 
@@ -44,18 +35,9 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
     :param pipeline_id: Primary key of the :class:`AISTPipeline` instance.
     :param params: Dictionary of parameters collected from the form.
     """
-    def get_param(key: str, default: Any) -> Any:
-        value = params.get(key)
-        return value if value not in (None, "", []) else default
 
-    log_level = get_param("log_level", "INFO")
+    log_level = params.get("log_level", "INFO")
     logger = _install_db_logging(pipeline_id, log_level)
-
-    if params is None:
-        logger.info("Launch via API. Need to add default parameters for project")
-        return
-
-    pipeline = None
 
     try:
         with transaction.atomic():
@@ -74,34 +56,22 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             pipeline.status = AISTStatus.SAST_LAUNCHED
             pipeline.started = timezone.now()
             pipeline.save(update_fields=["status", "started", "updated"])
-
-
-            project = pipeline.project
-            project_name = project.product.name if project else None
-            project_version = pipeline.project_version.version if pipeline.project_version else None # ???
-            project_supported_languages = project.supported_languages if project else []
+            if params is None:
+                logger.info("Launch via API. Using default parameters for project.")
+                params = PipelineArguments(project=pipeline.project, project_version = '')
+            else:
+                params = PipelineArguments.from_dict(params)
 
         analyzers_helper = AnalyzersConfigHelper()
-        languages = get_param("languages", [])
-        if isinstance(languages, str):
-            languages = [languages]
-        languages = list(set(languages + project_supported_languages))
-        project_version = get_param("project_version", project_version)
-        aist_path = getattr(settings, "AIST_OUTPUT_PATH", os.path.join("/tmp", "aist", "output"))
-        output_dir =  os.path.join(aist_path, project_name or "project", project_version or "default")
-        rebuild_images = bool(get_param("rebuild_images", False))
-        analyzers = get_param("analyzers", [])
-        time_class_level = get_param("time_class_level", "") # FIXME: if analyzer is from slower time class it will be skipped
-        dojo_product_name = get_param("dojo_product_name", project_name or None) # ???
-
-        pipeline_path = getattr(settings, "AIST_PIPELINE_CODE_PATH", None)
-        script_path = get_param("script_path", None)
-        script_path = os.path.join(pipeline_path, script_path)
-        if not os.path.isfile(script_path):
-            raise RuntimeError("Incorrrect script path for AIST pipeline.")
-        dockerfile_path = os.path.join(pipeline_path, "Dockerfiles", "builder", "Dockerfile")
-        if not os.path.isfile(dockerfile_path):
-            raise RuntimeError("Dockerfile does not exist")
+        project_name = params.project_name
+        languages = params.languages
+        project_version = params.project_version
+        output_dir =  params.output_dir
+        rebuild_images = params.rebuild_images
+        analyzers = params.analyzers
+        time_class_level = params.time_class_level # FIXME: if analyzer is from slower time class it will be skipped
+        script_path = params.script_path
+        dockerfile_path = params.dockerfile_path
 
         project_build_path = getattr(settings, "AIST_PROJECTS_BUILD_DIR", None)
         if not project_build_path:
@@ -114,8 +84,8 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
             languages=languages,
             analyzer_config=analyzers_helper,
             dockerfile_path=dockerfile_path,
-            context_dir=pipeline_path,
-            image_name=f"project-{dojo_product_name}-builder" if dojo_product_name else "project-builder",
+            context_dir=params.pipeline_src_path,
+            image_name=f"project-{project_name}-builder" if project_name else "project-builder",
             project_path=project_build_path,
             force_rebuild=False,
             rebuild_images=rebuild_images,
@@ -130,18 +100,18 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
 
         with transaction.atomic():
             pipeline = AISTPipeline.objects.select_for_update().get(id=pipeline_id)
-            pipeline.launch_data = launch_data or {}
+            pipeline.launch_data = launch_data
             pipeline.status = AISTStatus.UPLOADING_RESULTS
             pipeline.save(update_fields=["launch_data", "status", "updated"])
         logger.info("Upload step starting")
 
-        repo_path = (launch_data or {}).get("project_path", project_build_path)
-        trim_path = (launch_data or {}).get("trim_path", "")
+        repo_path = launch_data.get("project_path", project_build_path)
+        trim_path = launch_data.get("trim_path", "")
 
         results = upload_results_internal(
-            output_dir=(launch_data or {}).get("output_dir", output_dir),
-            analyzers_cfg_path=(launch_data or {}).get("tmp_analyzer_config_path"),
-            product_name=dojo_product_name or (project_name or ""),
+            output_dir=launch_data.get("output_dir", output_dir),
+            analyzers_cfg_path=launch_data.get("tmp_analyzer_config_path"),
+            product_name=project_name,
             repo_path=repo_path,
             trim_path=trim_path,
             pipeline_id=pipeline_id,
@@ -161,12 +131,8 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
         try:
             repo_params = read_repo_params(repo_path)
         except Exception as exc:
-            logger.warning("Failed to read repository info from %s: %s", repo_path, exc)
-            class _RP:  # minimal fallback
-                repo_url = ""
-                commit_hash = None
-                branch_tag = None
-            repo_params = _RP()
+            logger.error("Failed to read repository info from %s: %s", repo_path, exc)
+            return
 
         finding_ids: List[int] = list(
             Finding.objects.filter(test_id__in=test_ids).values_list('id', flat=True)
@@ -197,8 +163,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: Dict[str, Any]) -> None:
                 trim_path=trim_path,
                 pipeline_id=pipeline_id,
                 test_ids=test_ids,
-                log_level=log_level,
-                params=params,
+                log_level=log_level
             )
             raise self.replace(sig)
     except Ignore:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from django import forms
-from django.conf import settings
 from .models import AISTProject, AISTProjectVersion
 import json
 from .utils import _load_analyzers_config
@@ -106,14 +105,12 @@ class AISTPipelineRunForm(forms.Form):
 
         return dict(
             # from project model (immutable in the form)
-            project_name=proj.product.name,
-            script_path=proj.script_path,
+            project_id=proj.id,
             project_version=(pv.version if pv else None),
-            supported_languages=proj.supported_languages,
             # from user options
             rebuild_images=self.cleaned_data.get("rebuild_images") or False,
             log_level=self.cleaned_data.get("log_level") or "INFO",
-            languages=self.cleaned_data.get("languages") or [],
+            selected_languages=self.cleaned_data.get("languages") or [],
             analyzers=self.cleaned_data.get("analyzers") or [],
             time_class_level=self.cleaned_data.get("time_class_level"),
             ask_push_to_ai=self.cleaned_data.get("ask_push_to_ai") or True,
