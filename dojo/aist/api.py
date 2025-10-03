@@ -71,7 +71,7 @@ class PipelineStartAPI(APIView):
         create_new_version = serializer.validated_data["create_new_version_if_not_exist"]
 
         if create_new_version:
-            project_version = AISTProjectVersion.objects.get_or_create(
+            project_version, _created = AISTProjectVersion.objects.get_or_create(
                 project=project, version=project_version_hash)
         else:
             project_version = get_object_or_404(AISTProjectVersion, project=project, version=project_version_hash)

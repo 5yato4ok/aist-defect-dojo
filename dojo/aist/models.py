@@ -21,6 +21,7 @@ class AISTProject(models.Model):
     supported_languages = models.JSONField(default=list, blank=True)
     script_path = models.CharField(max_length=1024)
     compilable = models.BooleanField(default=False)
+    profile = models.JSONField(default=dict, blank=True)
 
     def __str__(self) -> str:
         return self.product.name

@@ -3,6 +3,7 @@ from django.conf import settings
 from dataclasses import dataclass, field
 from itertools import chain
 from .models import AISTProject
+from .utils import _load_analyzers_config
 
 @dataclass
 class PipelineArguments:
@@ -13,7 +14,7 @@ class PipelineArguments:
     log_level: str = "INFO"
     rebuild_images: bool = False
     ask_push_to_ai: bool = True
-    time_class_level: str = "medium" #TODO: change to enum
+    time_class_level: str = "slow" #TODO: change to enum
     is_initialized: bool = False
 
     def __post_init__(self):
@@ -46,8 +47,34 @@ class PipelineArguments:
     def analyzers(self) -> list[str]:
         if self.selected_analyzers:
             return self.selected_analyzers
-        #TODO: add calculation based on project
-        return self.selected_analyzers
+
+        cfg = _load_analyzers_config()
+        if not cfg:
+            return self.selected_analyzers
+
+        filtered = cfg.get_filtered_analyzers(
+            analyzers_to_run=None,
+            max_time_class=self.time_class_level,
+            non_compile_project=not self.project.compilable,
+            target_languages=self.languages,
+            show_only_parent=True
+        )
+        names = cfg.get_names(filtered)
+        profile = self.project.profile
+        if not profile:
+            # Just default list, by language
+            return names
+
+        analyzer_profile = profile.get("analyzers", dict())
+        if analyzer_profile:
+            if analyzer_profile.get("exclude"):
+                for name in analyzer_profile.get("exclude"):
+                    names.remove(name)
+            if analyzer_profile.get("include", None):
+                for name in analyzer_profile.get("include"):
+                    names.add(name)
+
+        return names
 
     @property
     def languages(self) -> list[str]:
