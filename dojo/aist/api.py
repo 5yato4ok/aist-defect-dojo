@@ -13,15 +13,15 @@ from rest_framework.permissions import IsAuthenticated
 
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter
 
-from .models import AISTPipeline, AISTProject, AISTStatus
+from .models import AISTPipeline, AISTProject, AISTStatus, AISTProjectVersion
 from dojo.aist.tasks import run_sast_pipeline
 
 
 class PipelineStartRequestSerializer(serializers.Serializer):
     """Minimal payload to start a pipeline."""
     aistproject_id = serializers.IntegerField(required=True)
-    # Optional free-form params passed to Celery task; store as dict
-    params = serializers.DictField(child=serializers.JSONField(), required=False, default=dict)
+    project_version = serializers.CharField(required=True)
+    create_new_version_if_not_exist = serializers.BooleanField(required=True)
 
 
 class PipelineStartResponseSerializer(serializers.Serializer):
@@ -45,12 +45,12 @@ class PipelineStartAPI(APIView):
         responses={
             201: OpenApiResponse(PipelineStartResponseSerializer, description="Pipeline created"),
             400: OpenApiResponse(description="Validation error"),
-            404: OpenApiResponse(description="Project not found"),
+            404: OpenApiResponse(description="Project or project version not found"),
         },
         examples=[
             OpenApiExample(
                 "Basic start",
-                value={"aistproject_id": 42},
+                value={"aistproject_id": 42, "project_version": "master", "create_new_version_if_not_exist": True},
                 request_only=True,
             )
         ],
@@ -65,8 +65,16 @@ class PipelineStartAPI(APIView):
         serializer.is_valid(raise_exception=True)
 
         project_id = serializer.validated_data["aistproject_id"]
-
         project = get_object_or_404(AISTProject, pk=project_id)
+
+        project_version_hash = serializer.validated_data["project_version"]
+        create_new_version = serializer.validated_data["create_new_version_if_not_exist"]
+
+        if create_new_version:
+            project_version = AISTProjectVersion.objects.get_or_create(
+                project=project, version=project_version_hash)
+        else:
+            project_version = get_object_or_404(AISTProjectVersion, project=project, version=project_version_hash)
 
         pipeline_id = uuid.uuid4().hex[:8]
 
@@ -74,11 +82,10 @@ class PipelineStartAPI(APIView):
             p = AISTPipeline.objects.create(
                 id=pipeline_id,
                 project=project,
-                project_version=project.versions.order_by("-created").first(),
-                status=AISTStatus.FINISHED,  # matches your existing bootstrap status
+                project_version=project_version,
+                status=AISTStatus.FINISHED,
             )
 
-        # Kick off Celery task; pass params transparently
         async_result = run_sast_pipeline.delay(pipeline_id, None)
         p.run_sast_task_id = async_result.id
         p.save(update_fields=["run_task_id"])

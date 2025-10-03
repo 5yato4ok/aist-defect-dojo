@@ -58,7 +58,7 @@ def run_sast_pipeline(self, pipeline_id: str, params: dict) -> None:
             pipeline.save(update_fields=["status", "started", "updated"])
             if params is None:
                 logger.info("Launch via API. Using default parameters for project.")
-                params = PipelineArguments(project=pipeline.project, project_version = '')
+                params = PipelineArguments(project=pipeline.project, project_version = pipeline.project_version.version)
             else:
                 params = PipelineArguments.from_dict(params)
 
