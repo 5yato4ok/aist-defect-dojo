@@ -12,6 +12,8 @@ import { useFinding, useFindingNotes, useFindingTimeline } from "../lib/queries"
 import PermissionGate from "./PermissionGate";
 import { useToast } from "./ToastProvider";
 import { ACCENT_SELECTED_CLASS } from "../lib/uiClasses";
+import { EMPTY_TAG_FILTER, onlyTag, tagFilterState, toggleTagState, type TagFilterValue } from "../lib/tagFilter";
+import FindingTagChip from "./FindingTagChip";
 import WorkItemsPanel from "./WorkItemsPanel";
 import AiFixPanel from "./AiFixPanel";
 
@@ -21,8 +23,8 @@ type FindingDetailTabsProps = {
   permissionOrganizationId?: number;
   aiResponse?: AIResponse | null;
   embedded?: boolean;
-  selectedTags?: string[];
-  onToggleTag?: (tag: string) => void;
+  tagFilter?: TagFilterValue;
+  onTagFilterChange?: (value: TagFilterValue) => void;
   selectedCwe?: string;
   onToggleCwe?: (cwe: string) => void;
 };
@@ -197,8 +199,8 @@ export default function FindingDetailTabs({
   permissionOrganizationId,
   aiResponse,
   embedded = false,
-  selectedTags = [],
-  onToggleTag,
+  tagFilter = EMPTY_TAG_FILTER,
+  onTagFilterChange,
   selectedCwe,
   onToggleCwe,
 }: FindingDetailTabsProps) {
@@ -247,19 +249,20 @@ export default function FindingDetailTabs({
               <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Tags</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {resolvedTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={[
-                      "rounded-full border px-3 py-1 text-xs transition",
-                      selectedTags.includes(tag)
-                        ? ACCENT_SELECTED_CLASS
-                        : "border-night-500 bg-night-900 text-slate-200 hover:border-brand-600/40",
-                    ].join(" ")}
-                    onClick={() => onToggleTag?.(tag)}
-                  >
-                    {tag}
-                  </button>
+                  onTagFilterChange ? (
+                    <FindingTagChip
+                      key={tag}
+                      tag={tag}
+                      state={tagFilterState(tagFilter, tag)}
+                      onInclude={() => onTagFilterChange(toggleTagState(tagFilter, tag, "include"))}
+                      onExclude={() => onTagFilterChange(toggleTagState(tagFilter, tag, "exclude"))}
+                      onOnly={() => onTagFilterChange(onlyTag(tagFilter, tag))}
+                    />
+                  ) : (
+                    <span key={tag} className="rounded-full border border-night-500 bg-night-900 px-3 py-1 text-xs text-slate-200">
+                      {tag}
+                    </span>
+                  )
                 ))}
               </div>
             </div>

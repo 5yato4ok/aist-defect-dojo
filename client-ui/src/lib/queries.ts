@@ -272,7 +272,10 @@ function buildFindingsParams(
     ...(filters.riskStates?.includes("mitigated") ? { is_mitigated: "true" } : {}),
     ...(filters.cwe ? { cwe: filters.cwe } : {}),
     ...(filters.tags?.length
-      ? { tags: filters.tags.map((tag) => tag.trim()).filter(Boolean).join(",") }
+      ? { [filters.tagMatchMode === "all" ? "tags__and" : "tags"]: filters.tags.map((tag) => tag.trim()).filter(Boolean).join(",") }
+      : {}),
+    ...(filters.excludedTags?.length
+      ? { not_tags: filters.excludedTags.map((tag) => tag.trim()).filter(Boolean).join(",") }
       : {}),
     ...(filters.ordering ? { ordering: filters.ordering } : {}),
     ...(filters.workItemStatus ? { work_item_status: filters.workItemStatus } : {}),
@@ -757,14 +760,21 @@ export function useCweMeta(cweId: number | null | undefined) {
   });
 }
 
+export type FindingTagOptions = {
+  names: string[];
+  counts: Record<string, number>;
+};
+
 export function useFindingTagsByProject(projectId?: number) {
   return useQuery({
     queryKey: ["finding-tags", projectId ?? "all"],
-    queryFn: async () => {
+    queryFn: async (): Promise<FindingTagOptions> => {
       const params = projectId ? `?project_id=${projectId}` : "";
-      const payload = await fetchJson<{ tags: string[] }>(`${getRoute("finding_tags_url")}${params}`);
+      const payload = await fetchJson<{ tags: string[]; counts?: Record<string, number> }>(
+        `${getRoute("finding_tags_url")}${params}`,
+      );
       const cleaned = (payload.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
-      return Array.from(new Set(cleaned));
+      return { names: Array.from(new Set(cleaned)), counts: payload.counts ?? {} };
     },
     staleTime: 5 * 60 * 1000,
   });

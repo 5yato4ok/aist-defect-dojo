@@ -3,7 +3,10 @@ import DateField from "./DateField";
 import FilterClearButton from "./FilterClearButton";
 import MultiSelectChips from "./MultiSelectChips";
 import SelectField from "./SelectField";
+import TagFilter from "./TagFilter";
 import TextInput from "./TextInput";
+import type { TagFilterValue } from "../lib/tagFilter";
+import { AI_STATUS_OPTIONS, WORK_ITEM_STATUS_OPTIONS } from "../lib/findingsFilterOptions";
 
 type FilterPanelProps = {
   products: Project[];
@@ -28,8 +31,9 @@ type FilterPanelProps = {
   selectedCwe: string;
   onCweChange: (value: string) => void;
   availableTags: string[];
-  selectedTags: string[];
-  onTagsChange: (value: string[]) => void;
+  tagCounts?: Record<string, number>;
+  tagFilter: TagFilterValue;
+  onTagFilterChange: (value: TagFilterValue) => void;
   selectedAiResponse: string;
   onAiResponseChange: (value: string) => void;
   selectedWorkItemStatus: string;
@@ -60,8 +64,9 @@ export default function FilterPanel({
   selectedCwe,
   onCweChange,
   availableTags,
-  selectedTags,
-  onTagsChange,
+  tagCounts,
+  tagFilter,
+  onTagFilterChange,
   selectedAiResponse,
   onAiResponseChange,
   selectedWorkItemStatus,
@@ -224,14 +229,13 @@ export default function FilterPanel({
             placeholder="e.g. 79, 89"
           />
         </div>
-        <MultiSelectChips
+        <TagFilter
           label="Tags"
           options={availableTags}
-          selected={selectedTags}
-          onChange={onTagsChange}
-          onClear={() => onTagsChange([])}
+          counts={tagCounts}
+          value={tagFilter}
+          onChange={onTagFilterChange}
           emptyLabel="No tags available."
-          visibleCount={10}
         />
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
@@ -245,14 +249,7 @@ export default function FilterPanel({
             hideLabel
             value={selectedAiResponse}
             onChange={onAiResponseChange}
-            options={[
-              { value: "All", label: "All" },
-              { value: "has_ai", label: "Has AI Response" },
-              { value: "no_ai", label: "No AI Response" },
-              { value: "ai_tp", label: "AI TP" },
-              { value: "ai_fp", label: "AI FP" },
-              { value: "ai_u", label: "AI U" },
-            ]}
+            options={AI_STATUS_OPTIONS}
           />
         </div>
         <div>
@@ -267,16 +264,7 @@ export default function FilterPanel({
             hideLabel
             value={selectedWorkItemStatus}
             onChange={onWorkItemStatusChange}
-            options={[
-              { value: "all", label: "All" },
-              { value: "any", label: "Has work item" },
-              { value: "none", label: "No work item" },
-              { value: "OPEN", label: "Open" },
-              { value: "IN_PROGRESS", label: "In Progress" },
-              { value: "DONE", label: "Done" },
-              { value: "CANCELLED", label: "Cancelled / Won't Fix" },
-              { value: "UNKNOWN", label: "Unknown" },
-            ]}
+            options={WORK_ITEM_STATUS_OPTIONS}
           />
         </div>
       </div>

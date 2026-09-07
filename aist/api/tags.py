@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.core.cache import cache
+from django.db.models import Count
 from dojo.models import Finding
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers
@@ -39,7 +40,10 @@ class AvailableFindingTagsAPI(AISTAPIView):
         responses={
             200: inline_serializer(
                 name="AvailableFindingTagsResponse",
-                fields={"tags": serializers.ListField(child=serializers.CharField())},
+                fields={
+                    "tags": serializers.ListField(child=serializers.CharField()),
+                    "counts": serializers.DictField(child=serializers.IntegerField()),
+                },
             ),
         },
     )
@@ -48,10 +52,10 @@ class AvailableFindingTagsAPI(AISTAPIView):
         query_serializer.is_valid(raise_exception=True)
         project = query_serializer.validated_data.get("project_id")
         project_id = project.id if project else None
-        cache_key = f"aist_findings_tags_{request.user.id}_{project_id or 'all'}"
+        cache_key = f"aist_findings_tags_v2_{request.user.id}_{project_id or 'all'}"
         cached = cache.get(cache_key)
         if cached is not None:
-            return Response({"tags": cached})
+            return Response(cached)
 
         findings = queryset_for_action(
             resource=Finding,
@@ -60,13 +64,17 @@ class AvailableFindingTagsAPI(AISTAPIView):
         )
         if project:
             findings = findings.filter(test__engagement__product_id=project.product_id)
-        tags = (
-            findings.values_list("tags__name", flat=True)
-            .exclude(tags__name__isnull=True)
+        # Facet counts: findings per tag inside the same (user, project) scope.
+        rows = (
+            findings.exclude(tags__name__isnull=True)
             .exclude(tags__name__exact="")
-            .distinct()
+            .values("tags__name")
+            .annotate(count=Count("id", distinct=True))
             .order_by("tags__name")
         )
-        result = list(tags)
-        cache.set(cache_key, result, 300)
-        return Response({"tags": result})
+        payload = {
+            "tags": [row["tags__name"] for row in rows],
+            "counts": {row["tags__name"]: row["count"] for row in rows},
+        }
+        cache.set(cache_key, payload, 300)
+        return Response(payload)

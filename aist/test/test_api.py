@@ -1328,14 +1328,76 @@ class AISTFindingTagsTests(AISTApiBase):
                 for tag in expected_absent:
                     self.assertNotIn(tag, tags)
 
-    def test_finding_list_tags_or(self):
-        url = reverse("aist_api:finding_list")
-        resp = self.client.get(url, data={"tags": "security,other"})
+    def _finding_ids(self, **params):
+        resp = self.client.get(reverse("aist_api:finding_list"), data=params)
         self.assertEqual(resp.status_code, 200)
-        results = resp.data.get("results", [])
-        ids = {row["id"] for row in results}
+        return {row["id"] for row in resp.data.get("results", [])}
+
+    def test_finding_tags_counts_follow_project_scope(self):
+        url = reverse("aist_api:finding_tags")
+        resp = self.client.get(url, data={"project_id": self.project.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["counts"].get("security"), 1)
+        self.assertEqual(resp.data["counts"].get("domxss"), 1)
+        self.assertNotIn("other", resp.data["counts"])
+
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["counts"].get("other"), 1)
+        self.assertEqual(set(resp.data["tags"]) & {"security", "domxss", "other"}, {"security", "domxss", "other"})
+
+    def test_finding_list_tags_or(self):
+        ids = self._finding_ids(tags="security,other")
         self.assertIn(self.finding.id, ids)
         self.assertIn(self.other_finding.id, ids)
+
+    def test_finding_list_not_tags_drops_findings_carrying_an_excluded_tag(self):
+        # "dast but not inconclusive": include by one tag, exclude by another.
+        ids = self._finding_ids(tags="security,other", not_tags="domxss")
+        self.assertNotIn(self.finding.id, ids)
+        self.assertIn(self.other_finding.id, ids)
+
+    def test_finding_list_not_tags_alone_keeps_untagged_and_other_findings(self):
+        ids = self._finding_ids(not_tags="security")
+        self.assertNotIn(self.finding.id, ids)
+        self.assertIn(self.other_finding.id, ids)
+
+    def test_finding_list_tags_and_requires_every_tag(self):
+        both = self._finding_ids(tags__and="security,domxss")
+        self.assertIn(self.finding.id, both)
+        self.assertNotIn(self.other_finding.id, both)
+
+        disjoint = self._finding_ids(tags__and="security,other")
+        self.assertNotIn(self.finding.id, disjoint)
+        self.assertNotIn(self.other_finding.id, disjoint)
+
+    def test_finding_list_tags_and_survives_other_m2m_joins(self):
+        # Two project versions on the same finding double every joined row. A
+        # Count()-based AND would see 4 tag rows instead of 2 and drop the finding.
+        for version in ("a" * 40, "b" * 40):
+            pv = AISTProjectVersion.objects.create(
+                project=self.project,
+                version_type=VersionType.GIT_HASH,
+                version=version,
+            )
+            pv.findings.add(self.finding)
+
+        ids = self._finding_ids(tags__and="security,domxss", project_id=self.project.id)
+        self.assertIn(self.finding.id, ids)
+
+    def test_finding_list_tag_filters_normalise_whitespace_and_duplicates(self):
+        ids = self._finding_ids(tags=" security , security ,, ")
+        self.assertIn(self.finding.id, ids)
+        ids = self._finding_ids(tags__and="security, domxss ,security")
+        self.assertIn(self.finding.id, ids)
+
+    def test_finding_list_rejects_oversized_tag_lists(self):
+        too_many = ",".join(f"tag{index}" for index in range(51))
+        for param in ("tags", "tags__and", "not_tags"):
+            with self.subTest(param=param):
+                resp = self.client.get(reverse("aist_api:finding_list"), data={param: too_many})
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn(param, resp.data)
 
     def test_finding_list_filters_by_pipeline(self):
         other_test = Test.objects.create(

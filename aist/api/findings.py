@@ -8,10 +8,13 @@ from datetime import datetime, time, timedelta
 from io import BytesIO, StringIO
 from urllib.parse import urlsplit
 
+from django import forms
 from django.db import OperationalError, transaction
+from django.db.models import Count
 from django.http import HttpResponse
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
+from django_filters.fields import BaseCSVField
 from dojo.api_v2 import serializers as dojo_serializers
 from dojo.filters import ApiFindingFilter
 from dojo.finding import helper as finding_helper
@@ -139,9 +142,37 @@ class AISTFindingListItemSerializer(dojo_serializers.FindingSerializer):
         return created.isoformat() if created else None
 
 
+MAX_TAG_FILTER_VALUES = 50
+
+
+class TagListField(BaseCSVField):
+
+    """Comma-separated tag list: trimmed, de-duplicated and bounded in size."""
+
+    def clean(self, value):
+        values = super().clean(value)
+        if values is None:
+            return None
+        cleaned = list(dict.fromkeys(item.strip() for item in values if item and item.strip()))
+        if len(cleaned) > MAX_TAG_FILTER_VALUES:
+            message = f"At most {MAX_TAG_FILTER_VALUES} tags may be combined in one filter."
+            raise forms.ValidationError(message, code="max_tags")
+        return cleaned
+
+
+class TagListFilter(django_filters.BaseCSVFilter, django_filters.CharFilter):
+    base_field_class = TagListField
+
+
 class AISTFindingFilter(ApiFindingFilter):
     pipeline_id = django_filters.CharFilter(method="filter_pipeline_id")
     project_id = django_filters.NumberFilter(field_name="aist_project_versions__project_id")
+    # Tag filters are redeclared over vendor's so every list shares TagListField's
+    # normalisation and size cap. ``tags`` = any of, ``tags__and`` = all of,
+    # ``not_tags`` = none of.
+    tags = TagListFilter(field_name="tags__name", lookup_expr="in")
+    not_tags = TagListFilter(field_name="tags__name", lookup_expr="in", exclude=True)
+    tags__and = TagListFilter(field_name="tags__name", method="filter_tags_and")
     created_gte = django_filters.IsoDateTimeFilter(method="filter_created_gte")
     created_lte = django_filters.IsoDateTimeFilter(method="filter_created_lte")
     status_updated_gte = django_filters.IsoDateTimeFilter(method="filter_status_updated_gte")
@@ -164,6 +195,13 @@ class AISTFindingFilter(ApiFindingFilter):
         ),
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # DojoFilter swaps the ``tags``/``not_tags`` form fields for tagulous widgets
+        # meant for its HTML filter forms, which bypasses TagListField's validation.
+        for name in ("tags", "not_tags"):
+            self.form.fields[name] = self.filters[name].field
+
     def filter_pipeline_id(self, queryset, name, value):
         pipeline_id = (value or "").strip()
         if not pipeline_id:
@@ -180,6 +218,18 @@ class AISTFindingFilter(ApiFindingFilter):
         if not pipeline:
             return queryset.none()
         return queryset.filter(test__aist_pipelines=pipeline)
+
+    def filter_tags_and(self, queryset, name, value):
+        # Single JOIN: count distinct matched tag names per finding. Vendor's
+        # tags__and counts joined rows, which over-counts as soon as another M2M
+        # join (project versions, work items) is active on the same queryset.
+        if not value:
+            return queryset
+        return (
+            queryset.filter(tags__name__in=value)
+            .annotate(_matched_tag_count=Count("tags__name", distinct=True))
+            .filter(_matched_tag_count=len(value))
+        )
 
     def filter_work_item_status(self, queryset, name, value):
         value = (value or "").strip()
@@ -313,7 +363,18 @@ class AISTFindingListAPI(AISTAPIView):
         summary="List AIST findings",
         parameters=[
             OpenApiParameter(name="pipeline_id", required=False, type=str),
-            OpenApiParameter(name="tags", required=False, type=str, many=True),
+            OpenApiParameter(
+                name="tags", required=False, type=str, many=True,
+                description="Comma-separated tags; a finding matches when it carries any of them.",
+            ),
+            OpenApiParameter(
+                name="tags__and", required=False, type=str, many=True,
+                description="Comma-separated tags; a finding matches only when it carries all of them.",
+            ),
+            OpenApiParameter(
+                name="not_tags", required=False, type=str, many=True,
+                description="Comma-separated tags; findings carrying any of them are excluded.",
+            ),
             OpenApiParameter(name="severity", required=False, type=str, many=True, enum=FINDING_API_CHOICES.severity),
             OpenApiParameter(
                 name="ai_status",

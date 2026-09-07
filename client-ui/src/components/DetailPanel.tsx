@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import type { AIResponse, Finding } from "../types";
+import type { TagFilterValue } from "../lib/tagFilter";
 import { type FindingCloseReason, useExportFinding } from "../lib/mutations";
 import { useToast } from "./ToastProvider";
 import FindingStatusActions from "./FindingStatusActions";
@@ -15,8 +16,8 @@ type DetailPanelProps = {
   permissionOrganizationId?: number;
   aiResponse?: AIResponse | null;
   embedded?: boolean;
-  selectedTags?: string[];
-  onToggleTag?: (tag: string) => void;
+  tagFilter?: TagFilterValue;
+  onTagFilterChange?: (value: TagFilterValue) => void;
   selectedCwe?: string;
   onToggleCwe?: (cwe: string) => void;
   onCloseApplied?: (findingId: number, reason: FindingCloseReason) => void;
@@ -31,8 +32,8 @@ export default function DetailPanel({
   permissionOrganizationId,
   aiResponse,
   embedded = false,
-  selectedTags,
-  onToggleTag,
+  tagFilter,
+  onTagFilterChange,
   selectedCwe,
   onToggleCwe,
   onCloseApplied,
@@ -122,8 +123,8 @@ export default function DetailPanel({
             permissionOrganizationId={permissionOrganizationId}
             aiResponse={aiResponse}
             embedded={embedded}
-            selectedTags={selectedTags}
-            onToggleTag={onToggleTag}
+            tagFilter={tagFilter}
+            onTagFilterChange={onTagFilterChange}
             selectedCwe={selectedCwe}
             onToggleCwe={onToggleCwe}
           />

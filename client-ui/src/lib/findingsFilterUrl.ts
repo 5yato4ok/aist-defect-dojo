@@ -1,4 +1,5 @@
 import type { FindingFilters, RiskState, Severity } from "../types";
+import { EMPTY_TAG_FILTER, normalizeTagFilter, type TagFilterValue } from "./tagFilter";
 
 const SEVERITY_ORDER: Severity[] = ["Critical", "High", "Medium", "Low", "Info"];
 const RISK_ORDER: RiskState[] = ["risk_accepted", "under_review", "mitigated"];
@@ -17,7 +18,7 @@ export type FindingsFilterUrlState = {
   file: string;
   cwe: string;
   severities: Severity[];
-  tags: string[];
+  tags: TagFilterValue;
   status: "All" | "Active" | "Non-Active";
   risk: RiskState[];
   aiStatus: string;
@@ -40,7 +41,7 @@ export const DEFAULT_FINDINGS_FILTERS: FindingsFilterUrlState = {
   file: "",
   cwe: "",
   severities: [],
-  tags: [],
+  tags: EMPTY_TAG_FILTER,
   status: "All",
   risk: [],
   aiStatus: "All",
@@ -85,6 +86,18 @@ function _parseWorkItemStatus(params: URLSearchParams): FindingsFilterUrlState["
   if (legacy === "yes" || legacy === "true") return "any";
   if (legacy === "no" || legacy === "false") return "none";
   return "all";
+}
+
+// `tags` (any of) and `tags__and` (all of) mirror the API one to one; a link
+// carrying both is read as all-of because that is the stricter request.
+function parseTagFilter(params: URLSearchParams): TagFilterValue {
+  const allOf = parseCsv(params.get("tags__and"));
+  const anyOf = parseCsv(params.get("tags"));
+  return normalizeTagFilter({
+    include: allOf.length ? allOf : anyOf,
+    exclude: parseCsv(params.get("not_tags")),
+    matchMode: allOf.length ? "all" : "any",
+  });
 }
 
 export function parseFindingsFiltersFromSearch(params: URLSearchParams): FindingsFilterUrlState {
@@ -139,7 +152,7 @@ export function parseFindingsFiltersFromSearch(params: URLSearchParams): Finding
     file: params.get("file") ?? "",
     cwe: params.get("cwe") ?? "",
     severities: orderByPriority(parseCsv(params.get("severity")) as Severity[], SEVERITY_ORDER),
-    tags: [...new Set(parseCsv(params.get("tags")))].sort((left, right) => left.localeCompare(right)),
+    tags: parseTagFilter(params),
     status,
     risk: orderByPriority(riskRaw, RISK_ORDER),
     aiStatus: params.get("ai_status") || "All",
@@ -162,11 +175,9 @@ export function buildFindingsFilterSearch(state: FindingsFilterUrlState): URLSea
   if (state.file) params.set("file", state.file);
   if (state.cwe) params.set("cwe", state.cwe);
   if (state.severities.length > 0) params.set("severity", orderByPriority(state.severities, SEVERITY_ORDER).join(","));
-  if (state.tags.length > 0) {
-    const normalizedTags = [...new Set(state.tags.map((tag) => tag.trim()).filter(Boolean))]
-      .sort((left, right) => left.localeCompare(right));
-    if (normalizedTags.length > 0) params.set("tags", normalizedTags.join(","));
-  }
+  const tags = normalizeTagFilter(state.tags);
+  if (tags.include.length > 0) params.set(tags.matchMode === "all" ? "tags__and" : "tags", tags.include.join(","));
+  if (tags.exclude.length > 0) params.set("not_tags", tags.exclude.join(","));
   if (state.status === "Active") params.set("active", "true");
   if (state.status === "Non-Active") params.set("active", "false");
   if (state.risk.includes("risk_accepted")) params.set("risk_accepted", "true");
@@ -204,7 +215,9 @@ export function toFindingsApiFilters(
     status: state.status === "Active" ? "enabled" : state.status === "Non-Active" ? "disabled" : undefined,
     riskStates: state.risk.length ? state.risk : undefined,
     cwe: state.cwe || undefined,
-    tags: state.tags.length ? state.tags : undefined,
+    tags: state.tags.include.length ? state.tags.include : undefined,
+    tagMatchMode: state.tags.include.length ? state.tags.matchMode : undefined,
+    excludedTags: state.tags.exclude.length ? state.tags.exclude : undefined,
     limit: options?.limit,
     offset: options?.offset,
     ordering: options?.ordering,

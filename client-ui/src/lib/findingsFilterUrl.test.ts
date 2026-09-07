@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFindingsFilterSearch, parseFindingsFiltersFromSearch, toFindingsApiFilters } from "./findingsFilterUrl";
+import {
+  buildFindingsFilterSearch,
+  DEFAULT_FINDINGS_FILTERS,
+  parseFindingsFiltersFromSearch,
+  toFindingsApiFilters,
+} from "./findingsFilterUrl";
 
 describe("parseFindingsFiltersFromSearch", () => {
   it("parses filters from query aliases", () => {
@@ -41,7 +46,7 @@ describe("parseFindingsFiltersFromSearch", () => {
       file: "src/app.ts",
       cwe: "79,89",
       severities: ["Critical", "High"],
-      tags: ["api", "auth"],
+      tags: { include: ["api", "auth"], exclude: [], matchMode: "any" },
       status: "Non-Active",
       risk: ["risk_accepted", "under_review"],
       aiStatus: "ai_tp",
@@ -88,7 +93,7 @@ describe("buildFindingsFilterSearch", () => {
       file: "src/main.ts",
       cwe: "79",
       severities: ["High", "Critical"],
-      tags: ["b", "a"],
+      tags: { include: ["b", "a"], exclude: [], matchMode: "any" },
       status: "Active",
       risk: ["mitigated", "risk_accepted"],
       aiStatus: "ai_u",
@@ -97,6 +102,48 @@ describe("buildFindingsFilterSearch", () => {
     expect(query.toString()).toBe(
       "project_id=42&pipeline_id=abc&title=XSS&created_gte=2026-03-01&created_lte=2026-03-02&processed_gte=2026-03-03&processed_lte=2026-03-04&mitigated_gte=2026-03-05&mitigated_lte=2026-03-06&project_version=release&file=src%2Fmain.ts&cwe=79&severity=Critical%2CHigh&tags=a%2Cb&active=true&risk_accepted=true&is_mitigated=true&ai_status=ai_u",
     );
+  });
+});
+
+describe("tag filter url state", () => {
+  it("parses include, exclude and all-of from the api-shaped params", () => {
+    const parsed = parseFindingsFiltersFromSearch(new URLSearchParams({
+      tags__and: "dast,cve",
+      not_tags: "inconclusive, dast",
+    }));
+    // a tag cannot be both included and excluded; include wins
+    expect(parsed.tags).toEqual({ include: ["cve", "dast"], exclude: ["inconclusive"], matchMode: "all" });
+  });
+
+  it("keeps legacy tags= links working as any-of", () => {
+    const parsed = parseFindingsFiltersFromSearch(new URLSearchParams({ tags: "dast" }));
+    expect(parsed.tags).toEqual({ include: ["dast"], exclude: [], matchMode: "any" });
+  });
+
+  it("serialises the dast-but-not-inconclusive scenario", () => {
+    const query = buildFindingsFilterSearch({
+      ...DEFAULT_FINDINGS_FILTERS,
+      tags: { include: ["dast"], exclude: ["inconclusive"], matchMode: "any" },
+    });
+    expect(query.toString()).toBe("tags=dast&not_tags=inconclusive");
+
+    const allOf = buildFindingsFilterSearch({
+      ...DEFAULT_FINDINGS_FILTERS,
+      tags: { include: ["dast", "cve"], exclude: [], matchMode: "all" },
+    });
+    expect(allOf.toString()).toBe("tags__and=cve%2Cdast");
+  });
+
+  it("round-trips through parse and build", () => {
+    const state = { ...DEFAULT_FINDINGS_FILTERS, tags: { include: ["a"], exclude: ["b", "c"], matchMode: "all" as const } };
+    expect(parseFindingsFiltersFromSearch(buildFindingsFilterSearch(state)).tags).toEqual(state.tags);
+  });
+
+  it("omits tag params from the api contract when nothing is selected", () => {
+    const filters = toFindingsApiFilters(DEFAULT_FINDINGS_FILTERS);
+    expect(filters.tags).toBeUndefined();
+    expect(filters.tagMatchMode).toBeUndefined();
+    expect(filters.excludedTags).toBeUndefined();
   });
 });
 
@@ -117,7 +164,7 @@ describe("toFindingsApiFilters", () => {
         file: "src/a.ts",
         cwe: "79",
         severities: ["High"],
-        tags: ["tag-1"],
+        tags: { include: ["tag-1"], exclude: ["tag-2"], matchMode: "all" },
         status: "Non-Active",
         risk: ["mitigated"],
         aiStatus: "ai_fp",
@@ -147,6 +194,8 @@ describe("toFindingsApiFilters", () => {
       riskStates: ["mitigated"],
       cwe: "79",
       tags: ["tag-1"],
+      tagMatchMode: "all",
+      excludedTags: ["tag-2"],
       limit: 25,
       offset: 50,
       ordering: "-severity",

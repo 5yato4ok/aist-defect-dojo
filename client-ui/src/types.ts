@@ -41,6 +41,8 @@ export type FindingFilters = {
   aiVerdict?: AIVerdict;
   cwe?: string;
   tags?: string[];
+  tagMatchMode?: "any" | "all";
+  excludedTags?: string[];
   workItemStatus?: string;
   limit?: number;
   offset?: number;

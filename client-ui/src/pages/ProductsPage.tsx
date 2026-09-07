@@ -4,7 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import type { ProductSummary, RiskScore } from "../types";
 import { useProductSummaries } from "../lib/queries";
 import { getRoute } from "../lib/routes";
-import MultiSelectChips from "../components/MultiSelectChips";
+import TagFilter from "../components/TagFilter";
+import { EMPTY_TAG_FILTER, matchesTagFilter, type TagFilterValue } from "../lib/tagFilter";
 import SelectField from "../components/SelectField";
 import TextInput from "../components/TextInput";
 import FilterClearButton from "../components/FilterClearButton";
@@ -137,7 +138,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("name_asc");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<TagFilterValue>(EMPTY_TAG_FILTER);
   const [pageSize, setPageSize] = useState<number>(12);
   const [pageIndex, setPageIndex] = useState<number>(0);
 
@@ -153,11 +154,11 @@ export default function ProductsPage() {
     const base = summaries.filter((s) => {
       if (status !== "all" && s.status !== status) return false;
       if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
-      if (selectedTags.length && !selectedTags.some((tag) => s.tags.includes(tag))) return false;
+      if (!matchesTagFilter(s.tags, tagFilter)) return false;
       return true;
     });
     return sortSummaries(base, sort);
-  }, [summaries, status, search, selectedTags, sort]);
+  }, [summaries, status, search, tagFilter, sort]);
 
   const paged = useMemo(() => {
     const start = pageIndex * pageSize;
@@ -166,7 +167,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     setPageIndex(0);
-  }, [status, search, selectedTags, sort, pageSize]);
+  }, [status, search, tagFilter, sort, pageSize]);
 
   useEffect(() => {
     const maxPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1);
@@ -176,7 +177,7 @@ export default function ProductsPage() {
   const clearAllFilters = () => {
     setSearch("");
     setStatus("all");
-    setSelectedTags([]);
+    setTagFilter(EMPTY_TAG_FILTER);
   };
 
   const lastSync = useMemo(() => {
@@ -243,13 +244,11 @@ export default function ProductsPage() {
           </div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <MultiSelectChips
+          <TagFilter
             label="Tags"
             options={tagOptions}
-            selected={selectedTags}
-            onChange={setSelectedTags}
-            onClear={() => setSelectedTags([])}
-            visibleCount={8}
+            value={tagFilter}
+            onChange={setTagFilter}
           />
         </div>
       </div>

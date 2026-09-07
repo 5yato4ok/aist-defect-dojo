@@ -18,10 +18,12 @@
             var required = Array.isArray(schema.required) ? schema.required : [];
             return Object.keys(properties).map(function (name) {
                 var definition = properties[name] || {};
-                var type = definition.type || (definition.enum ? "enum" : "value");
+                var type = Array.isArray(definition.type) ? definition.type.join(" | ")
+                    : (definition.type || (definition.enum ? "enum" : "value"));
                 var descriptor = type + (required.indexOf(name) >= 0 ? ", required" : ", optional");
                 if (Array.isArray(definition.enum)) descriptor += ", one of: " + definition.enum.join(", ");
-                return {name: name, descriptor: descriptor};
+                if (definition.minimum != null) descriptor += ", min " + definition.minimum;
+                return {name: name, descriptor: descriptor, description: definition.description || ""};
             });
         }
 
@@ -40,7 +42,9 @@
             if (fields.length) {
                 html += '<div class="small text-muted mb-1">Allowed fields:</div><ul class="small text-muted mb-2 ps-3">';
                 fields.forEach(function (field) {
-                    html += "<li><code>" + escapeHtml(field.name) + "</code> (" + escapeHtml(field.descriptor) + ")</li>";
+                    html += "<li><code>" + escapeHtml(field.name) + "</code> (" + escapeHtml(field.descriptor) + ")";
+                    if (field.description) html += " — " + escapeHtml(field.description);
+                    html += "</li>";
                 });
                 html += "</ul>";
             } else {
