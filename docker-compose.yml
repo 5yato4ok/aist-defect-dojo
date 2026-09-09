@@ -218,19 +218,6 @@ services:
       POSTGRES_PASSWORD: ${DD_DATABASE_PASSWORD:-defectdojo}
     volumes:
       - defectdojo_postgres:/var/lib/postgresql/data
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    profiles: ["ops"]
-    depends_on:
-      postgres:
-        condition: service_started
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_DEFAULT_EMAIL:-}"
-      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_DEFAULT_PASSWORD:-}"
-    ports:
-      - "5050:80"
-    volumes:
-      - ${AIST_PGADMIN_DATA_VOLUME:-pgadmin_data}:/var/lib/pgadmin
   valkey:
     image: valkey/valkey:7.2.11-alpine@sha256:9e483e0fe4c98b631b166b41d530c7ff1b8009a44f261bff28e9d1e2e27db58d
     volumes:
@@ -250,24 +237,6 @@ services:
     # A profile would exclude it from `docker compose build` too, defeating its only purpose.
     entrypoint: ["true"]
     restart: "no"
-
-  context-extractor-mcp:
-    build:
-      context: ./sast-combinator/context_extractor_service/ansible/files
-      dockerfile: Dockerfile
-    depends_on:
-      uwsgi:
-        condition: service_started
-    environment:
-      AIST_API_URL: "${DD_SITE_URL:-http://nginx:8080}"
-      AIST_API_TOKEN: "${AIST_SERVICE_TOKEN:-}"
-      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-}"
-    volumes:
-      - type: bind
-        source: ${AIST_TMP_DIR:-/tmp/aist}/projects
-        target: /tmp/aist/projects
-        read_only: true
-    restart: unless-stopped
 
   claude-bridge:
     build:
@@ -315,5 +284,4 @@ volumes:
       device: ${AIST_POSTGRES_DATA_DIR:-/tmp/aist/postgres}
   defectdojo_media: {}
   defectdojo_redis: {}
-  pgadmin_data: {}
   claude_bridge_sock: {}

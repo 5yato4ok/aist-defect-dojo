@@ -19,7 +19,6 @@ the concrete Compose services, see [runtime deployment](runtime-deployment.md).
 | Celery workers | Delayed operations, retries, orchestration, and persistence of outcomes | Browser/API request handling |
 | SAST runtime | Workspace preparation, build, analyzer fan-out, and report production | Tenant admission or finding review |
 | Provider connector | One standalone provider execution, such as DAST | SAST analyzer fan-out |
-| Context extractor | Read-only source analysis tools for an authorized active pipeline | Source ownership or pipeline admission |
 | Local AI bridge | Isolated local CLI invocation through a Unix socket | AI verdict persistence or tenant authorization |
 
 ## Request and state path
@@ -53,10 +52,7 @@ The dashed arrows leave ordinary application processing:
 - a SAST run creates its workspace, builder, and analyzer containers;
 - a standalone run creates a connector that communicates with its external
   provider;
-- the local AI bridge creates an isolated CLI operation;
-- that AI operation can use context-extractor tools, which resolve the active
-  pipeline through the internal API and read its workspace through a read-only
-  mount.
+- the local AI bridge creates an isolated CLI operation.
 
 The execution package runs inside the worker rather than as a long-lived
 service. Its operation containers do not decide who may access a project. They
@@ -67,9 +63,8 @@ become product state only through the platform import or callback boundary.
 
 For a manual SAST run, follow React → Django → PostgreSQL/Valkey → worker → SAST
 runtime → PostgreSQL. For local AI triage, continue worker → local AI bridge →
-context extractor → callback → PostgreSQL. This is why the diagram keeps
-coordination blocks separate from execution blocks even when they run on the
-same host.
+callback → PostgreSQL. This is why the diagram keeps coordination blocks
+separate from execution blocks even when they run on the same host.
 
 The sequence inside one pipeline is described in
 [pipeline execution](../product/pipeline-execution.md). The shared execution

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1160" height="760" viewBox="0 0 1160 760" role="img" aria-labelledby="title desc">
   <title id="title">AIST platform building blocks</title>
-  <desc id="desc">Product requests enter React and Django. PostgreSQL stores durable state, Valkey transports tasks from Django and Celery Beat to workers, and workers coordinate SAST, provider, context extraction, and local AI execution boundaries.</desc>
+  <desc id="desc">Product requests enter React and Django. PostgreSQL stores durable state, Valkey transports tasks from Django and Celery Beat to workers, and workers coordinate SAST, provider, and local AI execution boundaries.</desc>
   <defs>
     <style>text{font-family:Arial,sans-serif;fill:#17212b}.title{font-size:22px;font-weight:700}.group{font-size:17px;font-weight:700}.name{font-size:14px;font-weight:700}.detail{font-size:12px;fill:#52616b}.lane{fill:#f7f9fb;stroke:#d4dce3;stroke-width:1.5;rx:16}.box{stroke:#52616b;stroke-width:1.5;rx:11}.flow{fill:none;stroke:#596a78;stroke-width:2;marker-end:url(#arrow)}.queue{fill:none;stroke:#7d69aa;stroke-width:2;marker-end:url(#arrow)}.boundary{fill:none;stroke:#8b98a4;stroke-width:1.8;stroke-dasharray:7 5;marker-end:url(#arrow)}</style>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#596a78"/></marker>
@@ -37,18 +37,14 @@
   <path d="M515 468L400 360" class="flow"/>
 
   <text x="65" y="570" class="group">Execution and analysis boundaries</text>
-  <rect x="70" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
-  <text x="92" y="627" class="name">SAST runtime</text><text x="92" y="648" class="detail">workspace · builder · analyzers</text>
-  <rect x="330" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
-  <text x="352" y="627" class="name">Provider connector</text><text x="352" y="648" class="detail">standalone execution, for example DAST</text>
-  <rect x="590" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
-  <text x="612" y="627" class="name">Local AI bridge</text><text x="612" y="648" class="detail">Unix socket · isolated CLI run</text>
-  <rect x="850" y="600" width="240" height="70" class="box" fill="#fff0f0"/>
-  <text x="872" y="627" class="name">Context extractor MCP</text><text x="872" y="648" class="detail">authorized read-only source analysis</text>
-  <path d="M535 528L180 600" class="boundary"/>
-  <path d="M558 528L440 600" class="boundary"/>
-  <path d="M603 528L700 600" class="boundary"/>
-  <path d="M810 635H850" class="boundary"/><text x="816" y="622" class="detail">tools</text>
-  <path d="M970 600V555H745V198" class="flow"/><text x="864" y="550" class="detail">resolve pipeline via internal API</text>
+  <rect x="150" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
+  <text x="172" y="627" class="name">SAST runtime</text><text x="172" y="648" class="detail">workspace · builder · analyzers</text>
+  <rect x="470" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
+  <text x="492" y="627" class="name">Provider connector</text><text x="492" y="648" class="detail">standalone execution, for example DAST</text>
+  <rect x="790" y="600" width="220" height="70" class="box" fill="#fff0f0"/>
+  <text x="812" y="627" class="name">Local AI bridge</text><text x="812" y="648" class="detail">Unix socket · isolated CLI run</text>
+  <path d="M535 528L260 600" class="boundary"/>
+  <path d="M558 528L580 600" class="boundary"/>
+  <path d="M603 528L900 600" class="boundary"/>
   <text x="70" y="700" class="detail">Execution services return reports or verdicts through platform boundaries; PostgreSQL remains authoritative.</text>
 </svg>

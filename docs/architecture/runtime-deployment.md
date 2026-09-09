@@ -2,8 +2,8 @@
 
 AIST runs as a Docker Compose application. The diagram distinguishes long-lived
 services from containers created for one operation. This matters operationally:
-the context extractor and local AI bridge must be healthy before AI-assisted
-work can complete, even though neither serves browser traffic.
+the local AI bridge must be healthy before local AI-assisted work can complete,
+even though it does not serve browser traffic.
 
 ![AIST runtime deployment](../assets/runtime-deployment.svg)
 
@@ -21,14 +21,11 @@ The long-lived deployment contains:
 | Nginx and uWSGI/Django | Browser/API ingress, authorization, and control-plane workflow |
 | PostgreSQL and Valkey | Durable product state and Celery delivery |
 | Celery Beat and workers | Recurring production and asynchronous execution |
-| Context extractor MCP | Authenticated, read-only analysis of active pipeline workspaces |
 | Local AI bridge | Unix-socket API that creates isolated local AI CLI runs |
 
-The context extractor calls the internal platform API to resolve a pipeline to
-its source root. Its project-workspace mount is read-only. The bridge has the
-repository and workspace mounts it needs to launch the CLI, but it does not
-write AI verdicts directly into browser responses; completion returns through
-the application boundary.
+The bridge has the repository and workspace mounts it needs to launch the CLI,
+but it does not write AI verdicts directly into browser responses; completion
+returns through the application boundary.
 
 ## State and queued work
 
@@ -44,8 +41,7 @@ consistent history when a task is retried or a worker restarts.
 
 Celery workers have Docker-daemon access for SAST, connector, and VPN
 containers. The local AI bridge also has Docker-daemon access because it starts
-the isolated CLI container. The web process and context extractor do not have
-that socket.
+the isolated CLI container. The web process does not have that socket.
 
 Workers reach the bridge through a shared Unix socket. SAST runs create a
 workspace plus builder and analyzer containers. A standalone provider run

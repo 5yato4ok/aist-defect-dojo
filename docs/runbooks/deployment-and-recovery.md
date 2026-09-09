@@ -35,7 +35,6 @@ DD_SECRET_KEY=<long-random-django-secret>
 DD_CREDENTIAL_AES_256_KEY=<32-byte-random-key>
 FIELD_ENCRYPTION_KEY=<deployment-specific-field-encryption-key>
 AIST_SERVICE_TOKEN=<random-internal-service-token>
-MCP_AUTH_TOKEN=<random-mcp-client-token>
 ```
 
 Keep these values in the deployment secret store, not in the repository. Rotating
@@ -103,8 +102,8 @@ docker compose --env-file .env exec -T nginx nginx -t
 ```
 
 The required long-lived services are Nginx, Django, PostgreSQL, Valkey, Celery
-Beat, Celery workers, the context-extractor MCP service, and the local AI bridge.
-The deployment wrapper fails if any of them is absent after startup.
+Beat, Celery workers, and the local AI bridge. The deployment wrapper fails if
+any of them is absent after startup.
 
 For certificate validation:
 

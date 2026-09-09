@@ -157,7 +157,7 @@ run_e2e_tests() {
     fi
 
     echo "==> Building app images"
-    docker compose "${compose_args[@]}" build uwsgi nginx context-extractor-mcp
+    docker compose "${compose_args[@]}" build uwsgi nginx
 
     echo "==> Starting db/cache"
     CLIENT_UI_STARTED_STACK=1
@@ -177,8 +177,8 @@ run_e2e_tests() {
     docker compose "${compose_args[@]}" run --rm --no-deps --entrypoint /bin/bash uwsgi -lc \
       "cd /app && python3 manage.py bootstrap_demo_access --password '${DD_ADMIN_PASSWORD}'"
 
-    echo "==> Starting uwsgi/nginx/context-extractor-mcp"
-    docker compose "${compose_args[@]}" up --no-deps -d uwsgi nginx context-extractor-mcp
+    echo "==> Starting uwsgi/nginx"
+    docker compose "${compose_args[@]}" up --no-deps -d uwsgi nginx
     CLIENT_UI_STARTED_STACK=1
 
     local readiness_url="http://127.0.0.1:${DD_HTTP_PORT}/"
